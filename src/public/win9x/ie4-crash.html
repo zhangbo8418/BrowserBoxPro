@@ -642,7 +642,7 @@
             var tab = tabs[i];
             var tabEl = document.createElement('span');
             tabEl.className = 'tab' + (tab.targetId == currentActiveId ? ' tab-active' : '');
-            var titleText = (tab.title || 'New Tab').substring(0, 20);
+            var titleText = (tab.title || '新标签页').substring(0, 20);
             if (typeof tabEl.innerText != 'undefined') tabEl.innerText = titleText; else tabEl.innerHTML = titleText;
 
             tabEl._tid = tab.targetId;

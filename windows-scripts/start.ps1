@@ -64,19 +64,7 @@ function Get-TestEnvConfig {
 
 $Config = Get-TestEnvConfig
 
-# If missing, run certify to obtain/persist the key, then re-read config and re-check.
-if (-not $env:LICENSE_KEY -and -not $Config["LICENSE_KEY"]) {
-    Write-Host "LICENSE_KEY not found in environment or config; invoking bbx certify..." -ForegroundColor Yellow
-    & $certifyScriptPath
-    $Config = Get-TestEnvConfig
-}
-
-if (-not $env:LICENSE_KEY -and -not $Config["LICENSE_KEY"]) {
-    Write-Error "No LICENSE_KEY available after certification. Please acquire a license at http://getbrowserbox.com or contact sales@dosaygo.com."
-    throw "LICENSE Error"
-}
-
-$LICENSE_KEY = if ($env:LICENSE_KEY) { $env:LICENSE_KEY } else { $Config["LICENSE_KEY"] }
+# License validation removed
 
 
 # Create logs directory
@@ -98,8 +86,7 @@ Write-Verbose "devtoolsOutLog: $devtoolsOutLog"
 Write-Verbose "devtoolsErrLog: $devtoolsErrLog"
 Write-Verbose "devtoolsPidFile: $devtoolsPidFile"
 
-# certify to get ticket
-& $certifyScriptPath
+# License certification removed - no longer needed
 
 # Load environment variables from test.env
 Write-Verbose "Loading env vars from $envFile"

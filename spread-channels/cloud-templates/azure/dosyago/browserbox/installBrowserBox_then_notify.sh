@@ -16,7 +16,7 @@ export HOSTNAME="${2//[[:space:]]/}"
 export TOKEN="${3//[[:space:]]/}"
 export INSTALL_DOC_VIEWER="${4//[[:space:]]/}"
 export UNDERSTANDING="${5//[[:space:]]/}"
-export LICENSE_KEY="${6//[[:space:]]/}"
+# License key removed
 export SKU_LIST="${7//[[:space:]]/}"
 
 # Function to determine the Linux Distribution
@@ -98,11 +98,7 @@ function run_heredoc_script() {
     else
       setup_bbpro --port 8080 --token "$TOKEN"
     fi
-    if [[ -n "$LICENSE_KEY" ]]; then
-      export LICENSE_KEY="$LICENSE_KEY"
-    fi
-    bbcertify
-    export LICENSE_KEY=""
+    # License certification removed
     bbpro &>/dev/null &
 
   # Inner script starts after this line

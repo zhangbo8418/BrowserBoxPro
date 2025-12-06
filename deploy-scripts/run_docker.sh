@@ -47,30 +47,7 @@ pick_docker_cmd() {
 if [ "$EUID" -ne 0 ] && ! have_sudo; then
   echo "INFO: No root or passwordless sudo; will try unprivileged path where possible." >&2
 fi
-# License Agreement & Key (OG behavior; still interactive)
-echo "BrowserBox v13 Terms: https://dosaygo.com/terms.txt | License: https://github.com/BrowserBox/BrowserBox/blob/main/LICENSE.md | Privacy: https://dosaygo.com/privacy.txt"
-[ "${AGREE:-no}" = "yes" ] || read -r -p " Agree? (yes/no): " AGREE
-[ "$AGREE" = "yes" ] || { echo "ERROR: Must agree to terms!" >&2; exit 1; }
-# LICENSE_KEY (OG)
-if [[ -z "$LICENSE_KEY" ]]; then
-  echo "LICENSE_KEY is required to proceed." >&2
-  while [[ -z "$LICENSE_KEY" ]]; do
-    read -r -p "Please enter your LICENSE_KEY (contact sales@dosaygo.com): " LICENSE_KEY
-    if [[ -z "$LICENSE_KEY" ]]; then
-      echo "ERROR: LICENSE_KEY cannot be empty. Please try again." >&2
-    fi
-  done
-  if [[ -n "$BBX_DEBUG" ]]; then
-    echo "LICENSE_KEY set to $LICENSE_KEY." >&2
-  else
-    echo "LICENSE_KEY captured." >&2
-  fi
-else
-  echo "LICENSE_KEY is already set." >&2
-  if [[ -n "$BBX_DEBUG" ]]; then
-    echo "LICENSE_KEY set to $LICENSE_KEY." >&2
-  fi
-fi
+# License Agreement & Key removed - no longer required
 # Args Check (OG)
 if [[ -z "$PORT" || -z "$HOSTNAME" || -z "$EMAIL" ]]; then
   echo "ERROR: Usage: $0 <PORT> <HOSTNAME> <EMAIL>" >&2; exit 1
@@ -285,8 +262,8 @@ CONTAINER_ID="$(
     -p "$((PORT-1)):$((PORT-1))" \
     -p "$((PORT+1)):$((PORT+1))" \
     -p "$((PORT+2)):$((PORT+2))" \
-    -e "LICENSE_KEY=$LICENSE_KEY" -e "FULLCHAIN_PEM=$FULLCHAIN_PEM" -e "PRIVKEY_PEM=$PRIVKEY_PEM" \
-    "$DOCKER_IMAGE" bash -c "mkdir -p ~/sslcerts; echo \"\$FULLCHAIN_PEM\" | base64 -d > ~/sslcerts/fullchain.pem; echo \"\$PRIVKEY_PEM\" | base64 -d > ~/sslcerts/privkey.pem; chmod 600 ~/sslcerts/*.pem; cd ~/bbpro && setup_bbpro --port $PORT > login_link.txt && bbcertify && bbpro && ./deploy-scripts/drun.sh"
+    -e "FULLCHAIN_PEM=$FULLCHAIN_PEM" -e "PRIVKEY_PEM=$PRIVKEY_PEM" \
+    "$DOCKER_IMAGE" bash -c "mkdir -p ~/sslcerts; echo \"\$FULLCHAIN_PEM\" | base64 -d > ~/sslcerts/fullchain.pem; echo \"\$PRIVKEY_PEM\" | base64 -d > ~/sslcerts/privkey.pem; chmod 600 ~/sslcerts/*.pem; cd ~/bbpro && setup_bbpro --port $PORT > login_link.txt && bbpro && ./deploy-scripts/drun.sh"
 )" || {
   echo "ERROR: Docker run failed!" >&2
   exit 1

@@ -34,7 +34,7 @@ function Show-Help {
         "uninstall" = "Remove BrowserBox and related files`n bbx uninstall [-Force]"
         "setup" = "Set up BrowserBox`n bbx setup [-Hostname <hostname>] [-Email <email>] [-Port <port>] [-Token <token>] [-Force]"
         "run" = "Run BrowserBox`n bbx run [-Hostname <hostname>] [-Port <port>] [-Token <token>] [-Email <email>]"
-        "certify" = "Certify your license`n bbx certify [-ForceLicense] [-NoReservation] [-LicenseKey <key>]"
+        "certify" = "License certification (no longer required)`n bbx certify"
         "stop" = "Stop BrowserBox`n bbx stop [-GraceSeconds <seconds>]"
         "revalidate" = "Clears ticket and revalidates`n bbx revalidate"
     }
@@ -61,7 +61,7 @@ if ($commands.ContainsKey($Command)) {
             Write-Verbose "Ticket path: $ticketPath"
             if ($Args -contains "-help") {
                 Write-Host "bbx revalidate" -ForegroundColor Green
-                Write-Host "Clears ticket and revalidates license" -ForegroundColor Yellow
+                Write-Host "License revalidation (no longer required)" -ForegroundColor Yellow
                 Write-Host "Usage: bbx revalidate" -ForegroundColor Cyan
                 Write-Host "Options: None" -ForegroundColor Cyan
                 return

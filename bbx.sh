@@ -556,30 +556,10 @@ save_config() {
   mkdir -p "$BB_CONFIG_DIR"
   chmod 700 "$BB_CONFIG_DIR"  # Restrict to owner only
 
-  # Grab any existing key from config (without sourcing / polluting env)
-  local existing_key=""
-  if [ -f "$CONFIG_FILE" ]; then
-    existing_key=$(grep -E '^LICENSE_KEY=' "$CONFIG_FILE" | head -n1 | sed -E 's/^LICENSE_KEY="?([^"]*)"?$/\1/')
-  fi
-
-  # Decide what key to write:
-  # - Prefer the current in-memory key if it's valid format
-  # - Else keep the existing on-disk key if it's valid format
-  # - Else write empty
-  local _LIC_TO_WRITE=""
-  if [[ -n "$LICENSE_KEY" && "$LICENSE_KEY" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
-    _LIC_TO_WRITE="$LICENSE_KEY"
-  elif [[ -n "$existing_key" && "$existing_key" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
-    _LIC_TO_WRITE="$existing_key"
-  else
-    _LIC_TO_WRITE=""
-  fi
-
   # Only save persistent, user-level data to the main config file.
   # Runtime data like PORT, TOKEN, and HOSTNAME now live in test.env.
   cat > "$CONFIG_FILE" <<EOF
 EMAIL="${EMAIL:-}"
-LICENSE_KEY="${_LIC_TO_WRITE}"
 EOF
   chmod 600 "$CONFIG_FILE"
 }
@@ -593,50 +573,7 @@ ensure_nvm() {
     fi
 }
 
-# Validate product key with server, loop until valid
-validate_license_key() {
-  local force_prompt="${1:-false}"  # Only force prompt if explicitly requested
-  load_config
-
-  # If no key exists or we're forcing a new one, prompt
-  if [ -z "$LICENSE_KEY" ] || [ "$force_prompt" = "true" ]; then
-    while true; do
-      read -r -p "Enter License Key (e.g., U0TZ-GNMD-S889-RETG-YMCH-EAMR-ZOKU-2KRO): " LICENSE_KEY
-      if [ -z "$LICENSE_KEY" ]; then
-        printf "${RED}ERROR: License key cannot be empty. Try again.${NC}\n"
-        continue
-      fi
-      if [[ "$LICENSE_KEY" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
-        export LICENSE_KEY
-        certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify --force-license --no-reservation 2>&1")"
-        if [[ "$?" -eq 0 ]]; then
-          printf "${GREEN}License key validated with server.${NC}\n"
-          save_config
-          return 0
-        else
-          printf "${RED}ERROR: License key invalid or server unreachable. Try again.${NC}\n"
-          echo "Certification output: $certout"
-          LICENSE_KEY=""
-        fi
-      else
-        printf "${RED}ERROR: Invalid format. Must be 8 groups of 4 uppercase A-Z0-9 characters, separated by hyphens.${NC}\n"
-        LICENSE_KEY=""
-      fi
-    done
-  else
-    # Validate existing key
-    export LICENSE_KEY
-    certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify --force-license --no-reservation 2>&1")"
-    if [[ "$?" -eq 0 ]]; then
-      printf "${GREEN}Existing product key is valid.${NC}\n"
-      return 0
-    else
-      printf "${RED}Current product key ($LICENSE_KEY) is invalid. Run 'bbx certify' to update it.${NC}\n"
-      echo "Certification output: $certout"
-      return 1
-    fi
-  fi
-}
+# License validation removed - no longer needed
 
 # Box drawing helper function
 draw_box() {
@@ -1058,11 +995,6 @@ setup() {
   
   EMAIL="${EMAIL}" BB_USER_EMAIL="${EMAIL}" "$BBX_HOME/BrowserBox/deploy-scripts/tls" "$setup_hostname" || { printf "${RED}Hostname $setup_hostname certificate not acquired${NC}\n"; exit 1; }
 
-  # Ensure we have a valid product key
-  if ! validate_license_key; then
-    printf "${RED}License key invalid or missing. Run 'bbx activate' or go to dosaygo.com to get a valid key.${NC}\n"
-  fi
-
   pkill ncat &>/dev/null;
   for i in {-2..2}; do
     test_port_access $((setup_port+i)) || { printf "${RED}Quit software using these ports, or adjust firewall to allow ports $((setup_port-2))-$((setup_port+2))/tcp${NC}\n"; exit 1; }
@@ -1079,7 +1011,7 @@ setup() {
   fi
 
   # Call setup_bbpro, which writes to test.env
-  LICENSE_KEY="${LICENSE_KEY}" setup_bbpro "${setup_args[@]}" || { printf "${RED}Setup failed${NC}\n"; exit 1; }
+  setup_bbpro "${setup_args[@]}" || { printf "${RED}Setup failed${NC}\n"; exit 1; }
 
   # After setup_bbpro succeeds, reload config to get the new runtime values
   load_config
@@ -1177,22 +1109,7 @@ run() {
     ensure_hosts_entry "$hostname"
   fi
 
-  # Validate existing product key
-  export LICENSE_KEY;
-  certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify 2>&1")"
-  if [[ "$?" -ne 0 ]]; then
-    printf "${RED}License key invalid or missing. Run 'bbx activate' or go to dosaygo.com to get a valid key.${NC}\n"
-    echo "Certification output: $certout"
-    exit 1
-  else
-    printf "${GREEN}Certification complete.${NC}\n"
-    if [[ -f "$CERT_META_FILE" ]]; then
-      # shellcheck disable=SC1090
-      source "$CERT_META_FILE"
-      export BBX_RESERVATION_CODE BBX_RESERVED_SEAT_ID BBX_TICKET_ID BBX_TICKET_SLOT
-    fi
-  fi
-
+  # License validation removed
   export HOST_PER_SERVICE BBX_HTTP_ONLY;
   # Pass any extra args to bbpro
   run_quietly bbpro "${run_args[@]}" || { printf "${RED}Failed to start${NC}\n"; exit 1; }
@@ -1290,16 +1207,10 @@ tor_run() {
   elif ! $onion; then
       ensure_hosts_entry "$BBX_HOSTNAME"
   fi
-  LICENSE_KEY="${LICENSE_KEY}" $setup_cmd || { printf "${RED}Setup failed${NC}\n"; exit 1; }
+  $setup_cmd || { printf "${RED}Setup failed${NC}\n"; exit 1; }
   source "${BB_CONFIG_DIR}/test.env" && PORT="${APP_PORT:-$PORT}" && TOKEN="${LOGIN_TOKEN:-$TOKEN}" || { printf "${YELLOW}Warning: test.env not found${NC}\n"; }
-  # Validate existing product key
-  export LICENSE_KEY;
-  certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify 2>&1")"
-  if [[ "$?" -ne 0 ]]; then
-    printf "${RED}License key invalid or missing. Run 'bbx activate' or go to dosaygo.com to get a valid key.${NC}\n"
-    echo "Certification output: $certout"
-    exit 1
-  else
+  # License validation removed
+  {
     printf "${GREEN}Certification complete.${NC}\n"
     if [[ -f "$CERT_META_FILE" ]]; then
       # shellcheck disable=SC1090
@@ -1531,7 +1442,7 @@ export tunnel_host="$tunnel_hostname"
 export remote_user_at_host="$user_at_host"
 export remote_port="$p_main"
 export remote_zt_network_id="$zt_network_id"
-export bbx_license_key="$LICENSE_KEY"
+# License key export removed
 
 # ANSI color codes
 RED='\033[0;31m'
@@ -1640,7 +1551,7 @@ ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \\
     -L "\$((remote_port - 1)):127.0.0.1:\$((remote_port - 1))" \\
     -L "\$((remote_port + 1)):127.0.0.1:\$((remote_port + 1))" \\
     "\$remote_user_at_host" \\
-    "export LICENSE_KEY='\$bbx_license_key' ; bbx run; sleep 30000" &
+    "bbx run; sleep 30000" &
 
 tunnel_pid=\$!
 echo "SSH tunnel process started with PID: \$tunnel_pid"
@@ -1775,11 +1686,6 @@ EOF
     command -v docker >/dev/null 2>&1 || { printf "${RED}Docker installation failed${NC}\n"; exit 1; }
   fi
 
-  # Validate existing product key
-  if ! validate_license_key; then
-    printf "${RED}License key invalid. Run 'bbx certify' to update it.${NC}\n"
-    exit 1
-  fi
 
   local run_docker_script="$BBX_HOME/BrowserBox/deploy-scripts/run_docker.sh"
   if [ ! -f "$run_docker_script" ]; then
@@ -1807,7 +1713,7 @@ EOF
   printf "${YELLOW}Running run_docker.sh...${NC}\n"
 
   export BBX_DEBUG BBX_BRANCH
-  local docker_output="$(bash -c "env LICENSE_KEY='$LICENSE_KEY' BBX_HOME='$BBX_HOME' drun_file='$drun_file' port='$port' hostname='$hostname' email='$email' bash" << 'EOF'
+  local docker_output="$(bash -c "env BBX_HOME='$BBX_HOME' drun_file='$drun_file' port='$port' hostname='$hostname' email='$email' bash" << 'EOF'
   if [[ -n "$BBX_DEBUG" ]]; then
     set -x
   fi
@@ -1886,7 +1792,7 @@ docker_stop() {
   $SUDO docker exec "$container_id" bash -c "stop_bbpro" || {
     printf "${RED}Warning: Failed to run stop_bbpro in container${NC}\n"
   }
-  printf "${YELLOW}Waiting 1 second for license release...${NC}\n"
+  # License release removed
   sleep 1
 
   docker stop --timeout 3 "$container_id" &>/dev/null || docker stop --time 3 "$container_id" &>/dev/null ||
@@ -2040,11 +1946,11 @@ pre_install() {
 
         # Switch to the non-root user and run install
         echo "Switching to user $install_user..."
-        su - "$install_user" -c "export BBX_HOSTNAME=\"$BBX_HOSTNAME\"; export EMAIL=\"$EMAIL\"; export LICENSE_KEY=\"$LICENSE_KEY\"; export BBX_TEST_AGREEMENT=\"$BBX_TEST_AGREEMENT\"; export STATUS_MODE=\"$STATUS_MODE\"; /tmp/bbx.sh install"
+        su - "$install_user" -c "export BBX_HOSTNAME=\"$BBX_HOSTNAME\"; export EMAIL=\"$EMAIL\"; export BBX_TEST_AGREEMENT=\"$BBX_TEST_AGREEMENT\"; export STATUS_MODE=\"$STATUS_MODE\"; /tmp/bbx.sh install"
 
         if [[ -z "$BBX_TEST_AGREEMENT" ]] || [ -t 0 ]; then
           # Replace the root shell with the new user's shell
-          exec su - "$install_user" -c "export BBX_HOSTNAME=\"$BBX_HOSTNAME\"; export EMAIL=\"$EMAIL\"; export LICENSE_KEY=\"$LICENSE_KEY\"; export BBX_TEST_AGREEMENT=\"$BBX_TEST_AGREEMENT\"; export STATUS_MODE=\"$STATUS_MODE\"; bash -l"
+          exec su - "$install_user" -c "export BBX_HOSTNAME=\"$BBX_HOSTNAME\"; export EMAIL=\"$EMAIL\"; export BBX_TEST_AGREEMENT=\"$BBX_TEST_AGREEMENT\"; export STATUS_MODE=\"$STATUS_MODE\"; bash -l"
         else
           return 1
         fi
@@ -2106,77 +2012,7 @@ uninstall() {
 
 certify() {
   load_config
-  printf "${YELLOW}Certifying BrowserBox license...${NC}\n"
-
-  # Check if a license key was provided as an argument
-  if [ -n "$1" ]; then
-    LICENSE_KEY="$1"
-    if [[ "$LICENSE_KEY" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
-      export LICENSE_KEY
-      certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify --force-license --no-reservation 2>&1")"
-      if [[ "$?" -eq 0 ]]; then
-        printf "${GREEN}License key validated with server.${NC}\n"
-        save_config
-        printf "${GREEN}Certification complete.${NC}\n"
-        return 0
-      else
-        printf "${RED}ERROR: License key invalid or server unreachable.${NC}\n"
-        echo "Certification output: $certout"
-        exit 1
-      fi
-    else
-      printf "${RED}ERROR: Invalid format. Must be 8 groups of 4 uppercase A-Z0-9 characters, separated by hyphens.${NC}\n"
-      exit 1
-    fi
-  fi
-
-  # No argument provided, proceed with existing logic
-  if [ -n "$LICENSE_KEY" ]; then
-    printf "${BLUE}Current key: $LICENSE_KEY${NC}\n"
-    if [[ -z "$BBX_TEST_AGREEMENT" ]]; then
-      printf "Press Enter to validate it, or enter a new key to update: "
-      read -r new_key
-      if [ -z "$new_key" ]; then
-        # Empty input: validate the current key
-        if validate_license_key; then
-          printf "${GREEN}License certified.${NC}\n"
-        else
-          printf "${YELLOW}Current key is invalid. Please enter a new one.${NC}\n"
-          validate_license_key "true"  # Force prompt for a new key if validation fails
-        fi
-      else
-        # Non-empty input: use it as the new key and validate
-        LICENSE_KEY="$new_key"
-        if [[ "$LICENSE_KEY" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
-          export LICENSE_KEY
-          certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify --force-license --no-reservation 2>&1")"
-          if [[ "$?" -eq 0 ]]; then
-            printf "${GREEN}License key validated with server.${NC}\n"
-            save_config
-          else
-            printf "${RED}ERROR: License key invalid or server unreachable.${NC}\n"
-            echo "Certification output: $certout"
-            validate_license_key "true"  # Fall back to full prompt loop if invalid
-          fi
-        else
-          printf "${RED}ERROR: Invalid format. Must be 8 groups of 4 uppercase A-Z0-9 characters, separated by hyphens.${NC}\n"
-          validate_license_key "true"  # Fall back to full prompt loop if format is wrong
-        fi
-      fi
-    else
-      # BBX_TEST_AGREEMENT is set, skip interactive prompt and validate current key
-      if validate_license_key; then
-        printf "${GREEN}License certified.${NC}\n"
-      else
-        printf "${RED}Current key ($LICENSE_KEY) is invalid in test mode.${NC}\n"
-        exit 1
-      fi
-    fi
-  else
-    printf "${BLUE}No product key found. Please enter one.${NC}\n"
-    validate_license_key "true"  # Force prompt for initial setup
-  fi
-  printf "${GREEN}Certification complete.${NC}\n"
+  printf "${GREEN}License certification is no longer required.${NC}\n"
 }
 
 ng_run() {
@@ -2530,8 +2366,6 @@ license() {
     draw_box "Terms: https://dosaygo.com/terms.txt"
     draw_box "License: $REPO_URL/blob/${branch}/LICENSE.md"
     draw_box "Privacy: https://dosaygo.com/privacy.txt"
-    draw_box "Get a License: https://dosaygo.com/license"
-    printf "Run 'bbx certify' to enter your product key.\n"
 }
 
 status() {
@@ -2787,14 +2621,10 @@ run_as() {
     TOKEN=$(openssl rand -hex 16)
 
     # Run setup_bbpro with explicit PATH and fresh token, redirecting output as the target user
-    $SUDO -u "$user" bash -c "PATH=/usr/local/bin:\$PATH LICENSE_KEY="${LICENSE_KEY}" setup_bbpro --port $port --token $TOKEN > ~/.config/dosyago/bbpro/setup_output.txt 2>&1" || { printf "${RED}Setup failed for $user${NC}\n"; $SUDO cat "$HOME_DIR/.config/dosyago/bbpro/setup_output.txt"; exit 1; }
+    $SUDO -u "$user" bash -c "PATH=/usr/local/bin:\$PATH setup_bbpro --port $port --token $TOKEN > ~/.config/dosyago/bbpro/setup_output.txt 2>&1" || { printf "${RED}Setup failed for $user${NC}\n"; $SUDO cat "$HOME_DIR/.config/dosyago/bbpro/setup_output.txt"; exit 1; }
 
-    # Use caller's LICENSE_KEY
-    if [ -z "$LICENSE_KEY" ]; then
-        printf "${RED}No product key set in LICENSE_KEY env var. Run 'bbx activate' or go to dosaygo.com to get a valid product key.${NC}\n"
-        exit 1
-    fi
-    $SUDO -u "$user" bash -c "PATH=/usr/local/bin:\$PATH; export LICENSE_KEY='$LICENSE_KEY'; bbcertify && bbpro" || { printf "${RED}Failed to run BrowserBox as $user${NC}\n"; exit 1; }
+    # License validation removed
+    $SUDO -u "$user" bash -c "PATH=/usr/local/bin:\$PATH; bbpro" || { printf "${RED}Failed to run BrowserBox as $user${NC}\n"; exit 1; }
     sleep 2
 
     # Retrieve token
@@ -2831,7 +2661,7 @@ usage() {
     printf "  ${BOLD}\t\t   setup options:${NC}\n"
     printf "         \t         ${GREEN}--zeta, -z${NC}       Expose each service as a unique hostname. Useful for nginx,\n"
     printf "         \t                          ngrok, similar layers, or standard HTTP/S ports. Expects hosts.env\n"
-    printf "  ${GREEN}certify${NC}        Check your license\n"
+    # certify command removed - license check no longer needed
     printf "  ${GREEN}run${NC}            Run BrowserBox \t\t\t${BOLD}bbx run [--port|-p <port>] [--hostname|-h <hostname>]${NC}\n"
     printf "  ${GREEN}stop${NC}           Stop BrowserBox (current user)\n"
     printf "  ${GREEN}run-as${NC}         Run as a specific user \t\t${BOLD}bbx run-as [--temporary] [username] [port]${NC}\n"
@@ -2899,7 +2729,7 @@ activate() {
   local spinner_idx=0
   local counter=0
   local state="unvisited"
-  local license_key=""
+  # License key variable removed
   local seats_provisioned=0
   local total_seats=0
 
@@ -2914,7 +2744,7 @@ activate() {
     if [ $((counter % poll_interval)) -eq 0 ]; then
       local response=$(curl --connect-timeout 7 -s "https://browse.cloudtabs.net/api/license-status?session_id=$session_id")
       state=$(echo "$response" | jq -r '.state // "unvisited"')
-      license_key=$(echo "$response" | jq -r '.license_key // ""')
+      # License key extraction removed
       seats_provisioned=$(echo "$response" | jq -r '.seats_provisioned // 0')
       total_seats=$(echo "$response" | jq -r '.total_seats // 0')
       attempts=$((attempts + 1))
@@ -2932,10 +2762,9 @@ activate() {
         ;;
       "provisioned_complete")
         printf "\n"
-        LICENSE_KEY="$license_key"
         SEATS="$total_seats"
         save_config
-        printf "${GREEN}Success! License key: $LICENSE_KEY, $SEATS seats fully provisioned.${NC}\n"
+        printf "${GREEN}Success! $SEATS seats fully provisioned.${NC}\n"
         draw_box "BrowserBox is ready to use with $SEATS seats!"
         trap - INT TERM
         return 0

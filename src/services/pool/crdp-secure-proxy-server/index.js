@@ -5,8 +5,7 @@ import https from 'https';
 
 import express from 'express';
 import cookieParser from 'cookie-parser';
-import WebSocket from 'ws';
-//import {WebSocketServer} from 'ws';
+import WebSocket, { WebSocketServer } from 'ws';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 
@@ -273,7 +272,7 @@ app.get(/\/.*/, (req, res) => {
 
 const server = (GO_SECURE ? https : http).createServer(SSL_OPTS, app);
 
-const wss = new WebSocket.Server({server});
+const wss = new WebSocketServer({server});
 
 // we should probably handle upgrade too to stop server crashing on a 404 websocket. weird
 wss.on('connection', (ws, req) => {
@@ -293,10 +292,16 @@ wss.on('connection', (ws, req) => {
         let crdpSocket = new WebSocket(url);
         SOCKETS.set(ws, crdpSocket);
         ws.on('error', err => {
+          console.warn(`Front-end socket error`, err);
           DEBUG.debugDevtoolServer && console.warn(`Front-end socket error`, err);
         });
         crdpSocket.on('error', err => {
+          console.warn(`CRDPSocket error: ${err.message || err}`, {url, path, CHROME_PORT});
           DEBUG.debugDevtoolServer && console.warn(`CRDPSocket error`, err);
+          // 如果 Chrome 调试端口连接失败，关闭前端连接
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.close(1011, `Chrome debug port connection failed: ${err.message || 'unknown error'}`);
+          }
         });
         ws.on('open', () => {
           DEBUG.debugDevtoolsServer && console.log('Front-end socket open');
@@ -322,9 +327,12 @@ wss.on('connection', (ws, req) => {
           SOCKETS.delete(ws);
           crdpSocket.close(1001, 'client disconnected');
         });
-        crdpSocket.on('close', () => {
+        crdpSocket.on('close', (code, reason) => {
+          console.warn(`Chrome debug port WebSocket closed`, {code, reason: reason?.toString(), path, CHROME_PORT});
           SOCKETS.delete(ws);
-          ws.close(1011, 'browser disconnected');
+          if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+            ws.close(1011, `浏览器调试连接已断开 (code: ${code})`);
+          }
         });
       } catch(e) {
         console.warn('Error on websocket creation', e);

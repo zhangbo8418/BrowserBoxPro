@@ -30,8 +30,6 @@ commands=(
   "stop_bbpro"
   "torbb"
   "setup_tor"
-  "bbcertify"
-  "bbrevalidate"
   "bbclear"
   "bbupdate"
   "msgme"

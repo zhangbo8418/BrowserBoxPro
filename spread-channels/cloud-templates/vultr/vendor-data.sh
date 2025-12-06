@@ -118,18 +118,18 @@ ensure_curl || fail "curl is required for metadata fetching"
 export HOSTNAME="$(curl --connect-timeout 15 -s -H "METADATA-TOKEN: vultr" http://169.254.169.254/v1/internal/app-hostname)"
 export TOKEN="$(curl --connect-timeout 15 -s -H "METADATA-TOKEN: vultr" http://169.254.169.254/v1/internal/app-token)"
 export EMAIL="$(curl --connect-timeout 15 -s -H "METADATA-TOKEN: vultr" http://169.254.169.254/v1/internal/app-email)"
-export LICENSE_KEY="${LICENSE_KEY:-$(curl --connect-timeout 15 -s -H "METADATA-TOKEN: vultr" http://169.254.169.254/v1/internal/app-license_key 2>/dev/null)}"
+# License key removed - no longer required
 
 # Default config (can be overridden via Marketplace vars)
 export INSTALL_DOC_VIEWER="${INSTALL_DOC_VIEWER:-false}"
 
 # Validate inputs
-[ -z "$EMAIL" ] || [ -z "$HOSTNAME" ] || [ -z "$LICENSE_KEY" ] && fail "EMAIL, HOSTNAME, and LICENSE_KEY required"
+[ -z "$EMAIL" ] || [ -z "$HOSTNAME" ] && fail "EMAIL and HOSTNAME required"
 install_packages
 
 export BBX_HOSTNAME="${HOSTNAME:-localhost}"
 export EMAIL="${EMAIL:-test@example.com}"
-export LICENSE_KEY="${LICENSE_KEY:-TEST-KEY-1234-5678-90AB-CDEF-GHIJ-KLMN-OPQR}"
+# License key removed
 export BBX_TEST_AGREEMENT="${BBX_TEST_AGREEMENT:-true}"
 export INSTALL_DOC_VIEWER="$INSTALL_DOC_VIEWER"
 export BB_USER_EMAIL="$EMAIL"
@@ -151,10 +151,9 @@ su - "$username" <<EOF
 
   source ~/.nvm/nvm.sh
   export TOKEN="$TOKEN"
-  export LICENSE_KEY="$LICENSE_KEY"
   
   # Wait for commands to be available
-  for cmd in bbx setup_bbpro bbcertify bbpro; do
+  for cmd in bbx setup_bbpro bbpro; do
     log "Waiting for \$cmd to be available..."
     timeout 120 bash -c "until command -v \$cmd >/dev/null 2>&1; do sleep 5; done" || fail "\$cmd not available after 120s"
   done
@@ -163,7 +162,7 @@ su - "$username" <<EOF
   echo "Login token: $TOKEN" > "/home/$username/token.txt"
   
   bbx setup --port 8080 --token "$TOKEN" || fail "Setup failed"
-  bbcertify || fail "Certification failed - check LICENSE_KEY"
+  # License certification removed
   bbx run
   pm2 save || fail "PM2 save failed"
   

@@ -10,11 +10,7 @@ fi
 
 export STATUS_MODE="${STATUS_MODE}"
 
-if [[ -z "$LICENSE_KEY" ]]; then
-  echo "Set license key env" >&2
-  exit 1
-fi
-export LICENSE_KEY="${LICENSE_KEY}"
+# License key check removed - no longer required
 
 if [[ -z "$INSTALL_DOC_VIEWER" ]]; then
   echo "[ Warning ]: Install doc viewer is not set for tests. Setting..." >&2
@@ -23,17 +19,7 @@ fi
 export INSTALL_DOC_VIEWER="${INSTALL_DOC_VIEWER}"
 export BBX_NO_UPDATE="true"
 
-# Safely handle bbcertify output
-if command -v bbcertify; then
-  cert_file=$(bbcertify --no-reservation)
-  reservation_file="${HOME}/.config/dosyago/bbpro/tickets/reservation.json"
-  if [ $? -eq 0 ] && [ -n "$cert_file" ] && [ -f "$cert_file" ]; then
-    rm -f "$cert_file"
-    rm -f "$reservation_file"
-  else
-    echo "Warning: bbcertify failed or no file to remove" >&2
-  fi
-fi
+# License certification removed - no longer needed
 
 # ANSI colors
 RED='\033[0;31m'
@@ -59,7 +45,7 @@ trap 'echo -e "\n${NC}Test Summary:"; \
 # Environment variables (standardized to uppercase)
 export BBX_HOSTNAME="${BBX_HOSTNAME:-localhost}"
 export EMAIL="${EMAIL:-test@example.com}"
-export LICENSE_KEY="${LICENSE_KEY:-TEST-KEY-1234-5678-90AB-CDEF-GHIJ-KLMN-OPQR}"
+# License key export removed
 export BBX_TEST_AGREEMENT="${BBX_TEST_AGREEMENT:-true}"
 export BBX_DEBUG=false
 
@@ -160,7 +146,7 @@ test_install() {
   if [ "$(id -u)" -eq 0 ]; then
     sudo -u yes bash -c "cd; cp -r .bbx/BrowserBox . ;"
     install_user="$(cat "${BB_CONFIG_DIR}"/.install_user)"
-    exec su - "${install_user:-yes}" -c "export BBX_HOSTNAME=\"$BBX_HOSTNAME\"; export EMAIL=\"$EMAIL\"; export LICENSE_KEY=\"$LICENSE_KEY\"; export BBX_TEST_AGREEMENT=\"$BBX_TEST_AGREEMENT\"; export STATUS_MODE=\"$STATUS_MODE\"; bash -cl 'cd; cd BrowserBox; ./tests/test-bbx.sh ;'"
+    exec su - "${install_user:-yes}" -c "export BBX_HOSTNAME=\"$BBX_HOSTNAME\"; export EMAIL=\"$EMAIL\"; export BBX_TEST_AGREEMENT=\"$BBX_TEST_AGREEMENT\"; export STATUS_MODE=\"$STATUS_MODE\"; bash -cl 'cd; cd BrowserBox; ./tests/test-bbx.sh ;'"
   fi
 }
 

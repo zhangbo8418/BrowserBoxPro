@@ -11,19 +11,19 @@ class BBContextMenu extends Base {
       'page': [
         ...(_top.deviceIsMobile() ? this.MobileOptions(_top) : []),
         {
-          title: 'Open Link in New Tab',
+          title: '在新标签页中打开链接',
           shortCut: this.constructor.SHORT_CUT,
           func: this.openInNewTab,
         },
         //  This is blocked (apparently) on: https://bugs.chromium.org/p/chromium/issues/detail?id=1015260
         {
-          title: 'Open Link in Incognito Tab',
+          title: '在无痕标签页中打开链接',
           shortCut: this.constructor.SHORT_CUT,
           func: this.newBrowserContextAndTab,
         },
         {
           hr: true,
-          title: 'Resize Screen',
+          title: '调整屏幕大小',
           shortCut: this.constructor.SHORT_CUT,
           func: this.resizeViewport
         },
@@ -32,51 +32,51 @@ class BBContextMenu extends Base {
             document.fullscreenElement || 
             document.webkitFullscreenElement
           ) ? 
-            'Exit Full Screen' : 
-            'Full Screen'
+            '退出全屏' : 
+            '全屏'
           ,
           shortCut: this.constructor.SHORT_CUT,
           func: this.fullScreen,
         },
         {
-          title: 'Save Screenshot',
+          title: '保存截图',
           shortCut: this.constructor.SHORT_CUT,
           func: this.download
         },
         {
-          title: 'Toggle Controls',
+          title: '切换控制栏',
           shortCut: this.constructor.SHORT_CUT,
           func: this.toggleChromeUI
         },
         {
-          title: 'Copy Text from Here',
+          title: '从此处复制文本',
           shortCut: this.constructor.SHORT_CUT,
           func: this.copy,
           hr: true
         },
         {
-          title: 'Copy Link Address from Here',
+          title: '从此处复制链接地址',
           shortCut: this.constructor.SHORT_CUT,
           func: this.copyLink,
         },
         {
-          title: 'Paste Text',
+          title: '粘贴文本',
           shortCut: this.constructor.SHORT_CUT,
           func: this.paste
         },
         {
-          title: 'Reload',
+          title: '重新加载',
           hr: true,
           shortCut: this.constructor.SHORT_CUT,
           func: this.reload
         },
         {
-          title: 'Clear History',
+          title: '清除历史记录',
           shortCut: this.constructor.SHORT_CUT,
           func: this.clearHistoryAndCacheLeaveCookies,
         },
         {
-          title: 'Inspect in DevTools',
+          title: '在开发者工具中检查',
           hr: true,
           shortCut: this.constructor.SHORT_CUT,
           func: this.inspectCurrentTabInDevTools,
@@ -88,7 +88,7 @@ class BBContextMenu extends Base {
   MobileOptions(state) {
     return (DEBUG.showKeyboardToggleInContextMenu ? [
       {
-        title: state.viewState.shouldHaveFocus ? 'Hide keyboard' : 'Show keyboard',
+        title: state.viewState.shouldHaveFocus ? '隐藏键盘' : '显示键盘',
         shortCut: this.constructor.SHORT_CUT,
         func: (click) => {
           state.toggleVirtualKeyboard(click);
@@ -241,7 +241,7 @@ class BBContextMenu extends Base {
           type:'copy', 
           highlight: true, 
           message: innerText, 
-          title: `Text from Page`
+          title: `页面文本`
         }}, state);
       };
       this.close(state);
@@ -280,7 +280,7 @@ class BBContextMenu extends Base {
             type: 'copy', 
             message: attributes.href, 
             highlight: true,
-            title: 'Link from Page'
+            title: '页面链接'
           }}, state);
         }
       };
@@ -304,8 +304,8 @@ class BBContextMenu extends Base {
       this.close(state);
       state.viewState.modalComponent.openModal({modal:{
         type:'paste', 
-        message: "Enter text to paste", 
-        title: `Paste into Page`
+        message: "输入要粘贴的文本", 
+        title: `粘贴到页面`
       }}, state);
     }
 
@@ -438,7 +438,7 @@ class BBContextMenu extends Base {
       let state = this.state._top;
       state.wipeIsInProgress = true;
       globalThis.wipeIsInProgress = true;
-      const doIt = confirm("You'll stay signed in to most sites, but your browsing history and caches will be wiped. You cannot undo this action.\nIf you proceed, your application will reload in 5 seconds.\n\nAre you sure you want to clear all history and caches?");
+      const doIt = confirm("您将保持登录大多数网站，但您的浏览历史和缓存将被清除。此操作无法撤销。\n如果您继续，应用程序将在 5 秒后重新加载。\n\n您确定要清除所有历史和缓存吗？");
       if ( doIt ) {
         const {H} = state;
         H({
@@ -452,7 +452,7 @@ class BBContextMenu extends Base {
 
     clearBrowsingData(click) {
       let state = this.state._top;
-      const doIt = confirm("This will sign you out of most sites, and wipe all history and caches. Really wipe everything?");
+      const doIt = confirm("这将使您退出大多数网站，并清除所有历史和缓存。确定要清除所有内容吗？");
       if ( doIt ) {
         const {H} = state;
         H({
@@ -467,7 +467,7 @@ class BBContextMenu extends Base {
           synthetic: true,
           type: "clearCookies"
         });
-        alert("Cleared all history, caches and cookies.");
+        alert("已清除所有历史记录、缓存和 Cookie。");
       }
       this.close(state);
     }

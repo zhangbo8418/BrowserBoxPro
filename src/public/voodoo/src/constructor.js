@@ -697,20 +697,6 @@
             state.topBarComponent.updateDownloadStatus(downloPro);
           });
 
-        // application - license check removed
-          // queue.addMetaListener('applicationCheck', ({applicationCheck}) => {
-          //   if ( ! applicationCheck?.licenseValid ) {
-          //     state.applicationCheck = applicationCheck;
-          //     state.viewState.modalComponent.openModal({
-          //       modal: {
-          //         type: 'notice',
-          //         title: 'BrowserBox Activation',
-          //         message: 'Your copy of BrowserBox is not activated. Purchase a License Key at https://dosaygo.com or by contacting sales@dosaygo.com to enjoy uninterrupted usage and ensure full application security.'
-          //       }
-          //     });
-          //   }
-          // });
-
         // audio login
           let settingUp = false;
           async function setupAudio() {
@@ -1243,8 +1229,8 @@
             state.viewState.modalComponent.openModal({
               modal: {
                 type: 'notice',
-                title: 'BrowserBox Extensions',
-                message: 'Please wait while your extension is installed. Close this message to check progress.'
+                title: 'BrowserBox 扩展',
+                message: '请稍候，正在安装您的扩展。关闭此消息以查看进度。'
               }
             });
             state.viewState.modalComponent.addEventListener(
@@ -1255,15 +1241,15 @@
                 let waiter = async () => {
                   waits++;
                   if ( waits > maxWaits ) {
-                    alert(`Something weird happened and your browser did not seem to restart after installing the extension.`);
+                    alert(`出现了异常，浏览器似乎在安装扩展后没有重启。`);
                     clearInterval(waiter);
                     return;
                   }
-                  writeCanvas("Waiting for browser...");
+                    writeCanvas("等待浏览器...");
                   try {
                     const {isTor} = await Promise.race([throwAfter(1500), await globalThis.uberFetch('/isTor').then(async r => await r.json())]);
                     setTimeout(() => location.reload(), 1000);
-                    alert('Browser is back up. Reloading your app.');
+                    alert('浏览器已恢复。正在重新加载您的应用。');
                   } catch(e) {
                     setTimeout(waiter, 2003);
                   }
@@ -1279,8 +1265,8 @@
             state.viewState.modalComponent.openModal({
               modal: {
                 type: 'notice',
-                title: 'BrowserBox Extensions',
-                message: 'Please wait while your extension is removed. Close this message to check progress.'
+                title: 'BrowserBox 扩展',
+                message: '请稍候，正在移除您的扩展。关闭此消息以查看进度。'
               }
             });
             state.viewState.modalComponent.addEventListener(
@@ -1292,15 +1278,15 @@
                 let waiter = async () => {
                   waits++;
                   if ( waits > maxWaits ) {
-                    alert(`Something weird happened and your browser did not seem to restart after installing the extension.`);
+                    alert(`出现了异常，浏览器似乎在安装扩展后没有重启。`);
                     clearInterval(waiter);
                     return;
                   }
-                  writeCanvas("Waiting for browser...");
+                    writeCanvas("等待浏览器...");
                   try {
                     const {isTor} = await Promise.race([throwAfter(1500), await globalThis.uberFetch('/isTor').then(async r => await r.json())]);
                     setTimeout(() => location.reload(), 1000);
-                    alert('Browser is back up. Reloading your app.');
+                    alert('浏览器已恢复。正在重新加载您的应用。');
                   } catch(e) {
                     setTimeout(waiter, 2003);
                   }
@@ -1316,8 +1302,8 @@
             state.viewState.modalComponent.openModal({
               modal: {
                 type: 'notice',
-                title: 'BrowserBox Extensions',
-                message: 'Please wait while your extension is modified. Close this message to check progress.'
+                title: 'BrowserBox 扩展',
+                message: '请稍候，正在修改您的扩展。关闭此消息以查看进度。'
               }
             });
             state.viewState.modalComponent.addEventListener(
@@ -1329,15 +1315,15 @@
                 let waiter = async () => {
                   waits++;
                   if ( waits > maxWaits ) {
-                    alert(`Something weird happened and your browser did not seem to restart after installing the extension.`);
+                    alert(`出现了异常，浏览器似乎在安装扩展后没有重启。`);
                     clearInterval(waiter);
                     return;
                   }
-                  writeCanvas("Waiting for browser...");
+                    writeCanvas("等待浏览器...");
                   try {
                     const {isTor} = await Promise.race([throwAfter(1500), await globalThis.uberFetch('/isTor').then(async r => await r.json())]);
                     setTimeout(() => location.reload(), 1000);
-                    alert('Browser is back up. Reloading your app.');
+                    alert('浏览器已恢复。正在重新加载您的应用。');
                   } catch(e) {
                     setTimeout(waiter, 2003);
                   }

@@ -37,9 +37,8 @@
     throttle,
     ConnectOptions,
   } from './common.js';
-  import {releaseLicense, timedSend, eventSendLoop} from './server.js';
+  import {timedSend, eventSendLoop} from './server.js';
   import {MIN_TIME_BETWEEN_SHOTS, WEBP_QUAL} from './zombie-lord/screenShots.js';
-  // import {validityCheck} from './hard/application.js' // License check removed
   import {stop} from '../branch-bbx-stop.js';
 
   // legacy route import
@@ -587,17 +586,12 @@
         shuttingDown = true;
         clearInterval(globalThis.xCheckers);
         let markOtherTasksComplete;
-        let markLicenseReleased;
-        let licenseReleased = new Promise(res => markLicenseReleased = res);
         const otherTasks = new Promise(res => markOtherTasksComplete = res);
-        console.log('Releasing license');
-        releaseLicense().then(async resp => {
-          console.log(resp);
-          markLicenseReleased();
+        (async () => {
           await otherTasks;
           console.log('Queueing exit for 5 seconds later');
           setTimeout(() => process.exit(0), 5111);
-        });
+        })();
 
         setTimeout(() => {
           console.warn(`We do not terminate normally within more than 20 seconds, so shutting down now.`);
@@ -1063,32 +1057,8 @@
       }
     });
 
-    let runCount = 0;
     const checkers = async () => {
       if ( shuttingDown ) return;
-      // License check removed
-      // const targets = zl.act.getTargets(zombie_port);
-      // const licenseValid = await validityCheck({targets});
-      // if ( ! licenseValid ) {
-      //   forceMeta({
-      //     applicationCheck: {
-      //       licenseValid
-      //     }
-      //   });
-      //   runCount++;
-      //   if ( runCount >= 2 ) {
-      //     console.log(`Queueing shutdown int win fail`, {licenseValid});
-      //     if ( ! globalThis.megaKiller ) {
-      //       globalThis.megaKiller = setTimeout(() => globalThis.shutDown(), KILL_TIME)
-      //     }
-      //   }
-      // } else {
-      //   runCount = 0;
-      //   clearTimeout(globalThis.megaKiller);
-      //   globalThis.megaKiller = null;
-      // }
-      // License check disabled - always reset counters
-      runCount = 0;
       if (globalThis.megaKiller) {
         clearTimeout(globalThis.megaKiller);
         globalThis.megaKiller = null;

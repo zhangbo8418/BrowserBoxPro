@@ -1,22 +1,22 @@
   <button name=extensions onclick=toggleVisibility>
-    <img class=no-small alt="Extensions" src="voodoo/assets/icons/spray-can.svg"/>
+    <img class=no-small alt="扩展" src="voodoo/assets/icons/spray-can.svg"/>
   </button>
   <aside class="extensions panel">
     <ul>
-      <li data-id="all-extensions-page" class="all-link" onclick=openSettings title="See all extensions">
-        <a>BrowserBox Extensions</a>
+      <li data-id="all-extensions-page" class="all-link" onclick=openSettings title="查看所有扩展">
+        <a>BrowserBox 扩展</a>
       </li>
     </ul>
     ${_top?.extensions?.length ? G`<hr>` : ''} 
     <ul>${_top?.extensions?.length ? _top.extensions.map(({id: key, name, short_name, options_page, action, side_panel, enabled}) => F`${{key}}
       <li data-id=${key}>
         <a ${enabled?'':'disabled'} onclick=executeAction title="${enabled?
-          `Activate ${short_name || name.slice(0,23)}`
+          `激活 ${short_name || name.slice(0,23)}`
           :
-          `Deactivated. Re-enable in Extension Settings`
+          `已停用。请在扩展设置中重新启用`
         }">${short_name || name}</a>
-        <button onclick=openOptions title="Settings"> 
-          <img class=extensions-option alt="Options" src="voodoo/assets/icons/settings-2.svg">
+        <button onclick=openOptions title="设置"> 
+          <img class=extensions-option alt="选项" src="voodoo/assets/icons/settings-2.svg">
         </button>
       </li>`)
       : 

@@ -47,7 +47,6 @@ import {RACE_SAMPLE, makeCamera, COMMON_FORMAT, DEVICE_FEATURES, SCREEN_OPTS, MA
 import {blockAds,onInterceptRequest as adBlockIntercept} from './adblocking/blockAds.js';
 import {Document} from './api/document.js';
 import {websockets, extensions, getInjectableAssetPath, fileChoosers} from '../ws-server.js';
-// import {validityCheck} from './../hard/application.js'; // License check removed
 
 import {
   deskUA_Mac_Chrome,
@@ -341,30 +340,6 @@ function removeSession(id) {
 }
 
 //let id = 0;
-// License check removed
-// setTimeout(async () => {
-//   let licenseValid = false;
-//   try {
-//     licenseValid = await validityCheck({targets:[...tabs.values()]});
-//   } catch(e) {
-//     console.warn(`Application check error:`, e);
-//     licenseValid = false;
-//   }
-//   if ( ! licenseValid ) {
-//     console.log(`Queueing stop cnx`, {licenseValid});
-//     try {
-//       if ( ! globalThis.megaKiller ) {
-//         globalThis.megaKiller = setTimeout(
-//           () => globalThis.shutDown(),
-//           KILL_TIME
-//         );
-//       }
-//     } catch(e) {
-//       console.warn(`Error stopping. Trying again...`);
-//       stop().finally(() => process.exit(1));
-//     }
-//   }
-// }, 2951);
 
 /**
   Note, to support multiple clients we cannot simply call Connect for each one

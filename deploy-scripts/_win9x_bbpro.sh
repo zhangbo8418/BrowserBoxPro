@@ -4,12 +4,11 @@ source "${HOME}/.config/dosyago/bbpro/config"
 
 export WIN9X_COMPATIBILITY_MODE="true"
 export BBX_DONT_KILL_CHROME_ON_STOP="true"
-export LICENSE_KEY
 
 # Kill existing processes
 bbx stop
 
-bbcertify
+# License certification removed
 if [[ -n "$BBX_RUN_CURRENT_DIRECTORY" ]]; then
   npm test >&2
 else

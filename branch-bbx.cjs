@@ -55,14 +55,10 @@ async function installBrowserBox() {
     // Provide platform-specific next steps
     if (platform === 'win32') {
       console.log('### Next Steps for Windows:');
-      console.log('1. Purchase a license at https://dosaygo.com');
-      console.log('2. Receive your API key via email after purchase (Note: `bbx activate` is not available on Windows)');
-      console.log('3. Run with: bbx setup && bbx run');
+      console.log('1. Run with: bbx setup && bbx run');
     } else {
       console.log('### Next Steps for Linux/macOS:');
-      console.log('1. Purchase a license at https://dosaygo.com');
-      console.log('2. Activate with: bbx activate [seats]');
-      console.log('3. Run with: bbx setup && bbx run');
+      console.log('1. Run with: bbx setup && bbx run');
     }
   } catch (error) {
     console.error(`\nInstallation failed: ${error.message}`);

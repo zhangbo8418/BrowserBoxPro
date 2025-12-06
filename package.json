@@ -54,6 +54,9 @@
     "build": "node exec.js \"./scripts/only_build.sh\"",
     "package": "npx pkg --compress GZip . && codesign -vvvv --timestamp -s 'Developer ID Application' --force build/bbpro-macos -i com.DOSYAGO.BBPro",
     "mac-build": "TARGET_ARCH=x64 npm run clean &&TARGET_ARCH=x64 npm i && npm run parcel && npm run pack && npx pkg --compress GZip --targets=x64 .",
+    "linux-build": "bash scripts/linux-build.sh",
+    "linux-build-x64": "bash scripts/linux-build.sh x64",
+    "linux-build-arm64": "bash scripts/linux-build.sh arm64",
     "package-small": "npx pkg --compress Brotli .",
     "release": "npm run parcel && npm run build && npm run package",
     "x-prepublishOnly": "echo 'do not publish this' && fail"
@@ -96,6 +99,7 @@
     "express-rate-limit": "latest",
     "helmet": "latest",
     "is-docker": "latest",
+    "lighthouse-logger": "^2.0.2",
     "multer": "latest",
     "patch-package": "latest",
     "simple-peer": "latest",

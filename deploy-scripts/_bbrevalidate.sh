@@ -1,19 +1,9 @@
 #!/bin/bash
-# bbvalidate.sh - Remove existing ticket and get a new one
+# License revalidation removed - no longer needed
 
 if [[ -n "$BBX_DEBUG" ]]; then
   set -x
 fi
-set -e
 
-CONFIG_DIR="$HOME/.config/dosyago/bbpro/tickets"
-[ ! -d "$CONFIG_DIR" ] && mkdir -p "$CONFIG_DIR"
-TICKET_FILE="$CONFIG_DIR/ticket.json"
-
-rm -f $TICKET_FILE
-
-source "${HOME}/.config/dosyago/bbpro/config"
-
-export LICENSE_KEY="${LICENSE_KEY}"
-
-bbcertify
+echo "License revalidation is no longer required." >&2
+exit 0

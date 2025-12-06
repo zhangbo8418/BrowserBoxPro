@@ -88,6 +88,10 @@ self.addEventListener('message', (e) => {
 function shouldCache(request) {
   const url = new URL(request.url);
   const pathname = url.pathname;
+  // Don't cache chrome-extension:// or other unsupported schemes
+  if (url.protocol === 'chrome-extension:' || url.protocol === 'chrome:' || url.protocol === 'moz-extension:') {
+    return false;
+  }
   if (excludedPaths.has(pathname) || excludedPrefixes.some(prefix => pathname.startsWith(prefix))) {
     return false;
   }
@@ -95,6 +99,12 @@ function shouldCache(request) {
 }
 
 async function fetchAndCache(request) {
+  // Don't try to cache chrome-extension:// or other unsupported schemes
+  const url = new URL(request.url);
+  if (url.protocol === 'chrome-extension:' || url.protocol === 'chrome:' || url.protocol === 'moz-extension:') {
+    // Just fetch and return, don't cache
+    return fetch(request);
+  }
   const response = await fetch(request);
   if (response.ok && response.status === 200) {
     // Only cache valid responses with content

@@ -86,8 +86,8 @@ install_packages() {
 
 # --- Validation Functions ---
 validate_inputs() {
-  [ -z "$HOSTNAME" ] || [ -z "$USEREMAIL" ] || [ -z "$LICENSE_KEY_PASSWORD" ] && fail "HOSTNAME, USEREMAIL, and LICENSE_KEY_PASSWORD are required"
-  [ "$UNDERSTANDING" != "true" ] && fail "You must agree to open ports and set DNS"
+  [ -z "$HOSTNAME" ] || [ -z "$USEREMAIL" ] && fail "HOSTNAME and USEREMAIL are required"
+  [ "$UNDERSTANDING" != "true" ] && fail "You must agree to open ports and set DNS"
 }
 
 
@@ -109,7 +109,7 @@ deploy_raw() {
   export BBX_INSTALL_USER="$username"
   export BBX_HOSTNAME="$HOSTNAME"
   export BB_USER_EMAIL="$USEREMAIL"
-  export LICENSE_KEY="$LICENSE_KEY_PASSWORD"
+  # License key export removed
   export INSTALL_DOC_VIEWER="$INSTALL_DOC_VIEWER"
   export TOKEN="$TOKEN"
   yes yes | bash <(curl --connect-timeout 22 -sSL bbx.sh.dosaygo.com) install || fail "BBX install script failed"
@@ -117,14 +117,14 @@ deploy_raw() {
     cd "/home/$username" || cd "\$HOME" || fail "Cannot access home dir"
     log() { echo "\$@" >&2; }
     fail() { log "Error: \$1"; exit 1; }
-    source ~/.nvm/nvm.sh
-    for cmd in bbx setup_bbpro bbcertify bbpro; do
-      log "Waiting for \$cmd to be available..."
-      timeout 120 bash -c "until command -v \$cmd >/dev/null 2>&1; do sleep 5; done" || fail "\$cmd not available after 120s"
-    done
+    source ~/.nvm/nvm.sh
+    for cmd in bbx setup_bbpro bbpro; do
+      log "Waiting for \$cmd to be available..."
+      timeout 120 bash -c "until command -v \$cmd >/dev/null 2>&1; do sleep 5; done" || fail "\$cmd not available after 120s"
+    done
     echo "Login token: $TOKEN" > "/home/$username/token.txt"
     bbx setup --port 8080 --token "$TOKEN" || fail "Setup failed"
-    bbcertify || fail "Certification failed - check LICENSE_KEY"
+    # License certification removed
     bbx run || fail "Run failed"
     pm2 save || fail "PM2 save failed"
     pm2_cmd="\$(pm2 startup | grep -v '^\[PM2\]' | awk '/^sudo env/')"

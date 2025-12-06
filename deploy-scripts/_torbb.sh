@@ -618,17 +618,7 @@ manage_firewall() {
     log_inf "No config file found at ${CONFIG_FILE}. Proceeding without it."
   fi
 
-  # LICENSE_KEY prompt (unchanged)
-  if [[ -z "${LICENSE_KEY:-}" ]]; then
-    log_inf "LICENSE_KEY is required to proceed."
-    while [[ -z "${LICENSE_KEY:-}" ]]; do
-      read -p "Please enter your LICENSE_KEY: " LICENSE_KEY
-      if [[ -z "$LICENSE_KEY" ]]; then log_err "LICENSE_KEY cannot be empty. Please try again."; fi
-    done
-    log_inf "LICENSE_KEY set."
-  else
-    log_inf "LICENSE_KEY is already set."
-  fi
+  # License key check removed - no longer required
 
   log_inf "Ensuring any other bbpro $USER was running is shutdown..."
   ensure_shutdown

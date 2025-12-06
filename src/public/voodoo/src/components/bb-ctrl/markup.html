@@ -47,12 +47,12 @@ ${state.chromeUI ? F`
             });
           }} click=${[e => DEBUG.debugHistory && console.log('history event', e), saveClick]} stylist="styleHistoryForm">
             <button ${disabled() ? 'disabled' : ''} name=history_action title="${
-              disabled() ? '(Back) Open a tab first' : 'Back in History'
+              disabled() ? '（后退）请先打开标签页' : '后退'
             }" value=back class=back>
               <img src="voodoo/assets/icons/arrow-left.svg">
             </button>
             <button ${disabled() ? 'disabled' : ''} name=history_action title="${
-              disabled() ? '(Forward) Open a tab first' : 'Forward in History'
+              disabled() ? '（前进）请先打开标签页' : '前进'
             }" value=forward class=forward>
               <img src="voodoo/assets/icons/arrow-right.svg">
             </button>

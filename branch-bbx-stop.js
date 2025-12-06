@@ -2,7 +2,7 @@
 
 import os from 'os';
 import { spawn } from 'child_process';
-import {release} from './src/hard/application.js';
+// License release removed - no longer needed
 
 console.log('Stopping BrowserBox...');
 

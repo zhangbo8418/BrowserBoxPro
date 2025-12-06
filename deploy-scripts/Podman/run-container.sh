@@ -42,12 +42,7 @@ echo "BrowserBox v13 Terms: https://dosaygo.com/terms.txt | License: https://git
 [ "${AGREE:-no}" = "yes" ] || read -r -p " Agree? (yes/no): " AGREE
 [ "$AGREE" = "yes" ] || { echo "ERROR: Must agree to terms!" >&2; exit 1; }
 
-# LICENSE_KEY prompt (unchanged)
-if [[ -z "${LICENSE_KEY:-}" ]]; then
-  while [[ -z "${LICENSE_KEY:-}" ]]; do
-    read -r -p "Please enter your LICENSE_KEY: " LICENSE_KEY
-  done
-fi
+# License key check removed - no longer required
 
 # Args
 if [[ -z "$PORT" || -z "$HOSTNAME" || -z "$EMAIL" ]]; then
@@ -180,10 +175,9 @@ CONTAINER_ID="$(
     -p "$((PORT-1)):$((PORT-1))" \
     -p "$((PORT+1)):$((PORT+1))" \
     -p "$((PORT+2)):$((PORT+2))" \
-    -e "LICENSE_KEY=$LICENSE_KEY" \
     -e "FULLCHAIN_PEM=$FULLCHAIN_PEM" \
     -e "PRIVKEY_PEM=$PRIVKEY_PEM" \
-    "$IMAGE" bash -lc 'mkdir -p ~/sslcerts; echo "$FULLCHAIN_PEM" | base64 -d > ~/sslcerts/fullchain.pem; echo "$PRIVKEY_PEM" | base64 -d > ~/sslcerts/privkey.pem; chmod 600 ~/sslcerts/*.pem; cd ~/bbpro && setup_bbpro --port '"$PORT"' > login_link.txt && bbcertify && bbpro && ./deploy-scripts/drun.sh'
+    "$IMAGE" bash -lc 'mkdir -p ~/sslcerts; echo "$FULLCHAIN_PEM" | base64 -d > ~/sslcerts/fullchain.pem; echo "$PRIVKEY_PEM" | base64 -d > ~/sslcerts/privkey.pem; chmod 600 ~/sslcerts/*.pem; cd ~/bbpro && setup_bbpro --port '"$PORT"' > login_link.txt && bbpro && ./deploy-scripts/drun.sh'
 )" || { echo "ERROR: Container run failed!" >&2; exit 1; }
 
 sleep 5

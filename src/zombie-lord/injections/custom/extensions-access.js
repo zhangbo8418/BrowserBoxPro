@@ -47,12 +47,12 @@
 
           const id = location.pathname.split('/').pop();
           if ( ! id ) {
-            alert('Sorry, extension ID cannot be found');
+            alert('抱歉，无法找到扩展 ID');
             return;
           }
 
           if ( globalThis._installedExtensions?.has?.(id) ) {
-            const removeExtension = confirm(`Do you want to remove the extension "${name}" from your CloudTabs browser?\n\nIf you select Confirm your app will remove the extension and restart.`);
+            const removeExtension = confirm(`您想要从您的 CloudTabs 浏览器中移除扩展 "${name}" 吗？\n\n如果您选择确认，应用将移除该扩展并重启。`);
             if ( removeExtension ) {
               try {
                 name = name.replace(/\s/g, '-').toLocaleLowerCase();
@@ -79,7 +79,7 @@
               }
             }
           } else {
-            const installExtension = confirm(`Do you want to install the extension "${name}" into your CloudTabs browser?\n\nIf you select Confirm your app will install the extension and restart.`);
+            const installExtension = confirm(`您想要将扩展 "${name}" 安装到您的 CloudTabs 浏览器中吗？\n\n如果您选择确认，应用将安装该扩展并重启。`);
             if ( installExtension ) {
               try {
                 name = name.replace(/\s/g, '-').toLocaleLowerCase();
@@ -182,7 +182,7 @@
           const nameEl = doc.querySelector('#name') || doc.querySelector('[id^="name"]');
           let name = nameEl?.innerText || `extension-${id}`;
           removeButton.addEventListener('click', () => {
-            const doIt = confirm(`Do you want to remove "${name}" from your CloudTabs browser?`);
+            const doIt = confirm(`您想要从您的 CloudTabs 浏览器中移除 "${name}" 吗？`);
             if ( doIt ) {
               try {
                 name = name.replace(/\s/g, '-').toLocaleLowerCase();
@@ -210,7 +210,7 @@
             }
           }, {capture:true});
           enableToggle.addEventListener('click', () => {
-            const doIt = confirm(`Do you want to modify "${name}" in your CloudTabs browser?`);
+            const doIt = confirm(`您想要修改您的 CloudTabs 浏览器中的 "${name}" 吗？`);
             if ( doIt ) {
               try {
                 name = name.replace(/\s/g, '-').toLocaleLowerCase();

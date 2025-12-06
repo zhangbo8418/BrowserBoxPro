@@ -1,5 +1,5 @@
 const html = `
-  <h1>This is a new tab.</h1>
+  <h1>这是一个新标签页。</h1>
 `;
 
 const NEWTAB_RESPONSE = `
