@@ -38,11 +38,12 @@ export async function stop() {
   const platform = os.platform();
   console.log(`Detected OS: ${platform}`);
 
-  try {
-    await release();
-  } catch(e) {
-    console.log('Error releasing license', e);
-  }
+  // License check removed
+  // try {
+  //   await release();
+  // } catch(e) {
+  //   console.log('Error releasing license', e);
+  // }
   try {
     // Run the stop 
     await runStop(platform);

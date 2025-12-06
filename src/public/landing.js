@@ -1,14 +1,13 @@
 export default function Landing(state) {
   const {Wrap} = state.boilerplate;
   
-  return Wrap(state, "Remote Browser Isolation", `
+  return Wrap(state, "远程浏览器隔离", `
         <section class=content>
           <section class=introduction tabindex=0>
             <div class=story>
-              <h1>Welcome to Safe Browsing.</h1>
+              <h1>欢迎使用安全浏览。</h1>
               <p>
-                In a world of risks, we offer you the simplest and best browser isolation 
-                platform. 
+                在这个充满风险的世界中，我们为您提供最简单、最好的浏览器隔离平台。
               </p>
             </div>
             <div class=graphic>
@@ -24,23 +23,20 @@ export default function Landing(state) {
                 <img src=/images/3rd-party/undraw/securityon.svg>
               </div>
               <div class=story>
-                <h1>Customer-First Security.</h1>
+                <h1>以客户为先的安全。</h1>
                 <p>
-                  We put the customer first, and provide the 
-                  most similar experience to browsing on your normal insecure browser, without
-                  the risks. Our fault-tolerant browser-as-a-service infrastructure 
-                  enables the secure and reliable provision of fully managed, 
-                  fully hosted and fully remote cloud browsers, at whatever scale you require.
-                  Our familiar web client looks and feels just like using your regular insecure browser, 
-                  and runs in all modern and legacy platforms, no downloads required, even on mobile.
+                  我们以客户为先，提供与您正常的不安全浏览器最相似的浏览体验，但没有风险。我们的容错浏览器即服务基础设施
+                  能够安全可靠地提供完全托管、完全托管和完全远程的云浏览器，无论您需要什么规模。
+                  我们熟悉的 Web 客户端看起来和使用起来就像使用您常规的不安全浏览器一样，
+                  可在所有现代和传统平台上运行，无需下载，甚至在移动设备上也可以。
                 </p>
               </div>
             </section>
             <section class=protection tabindex=0>
               <div class=story>
-                <h1>More Private. More Secure. More Control.</h1>
+                <h1>更私密。更安全。更多控制。</h1>
                 <p>
-                  BrowserBox never runs any JavaScript, applets, CSS or HTML from the remote page on your machine or network. By totally isolating your infrastructure form the risks of the web, it means that malware, exploits, ransomware, adware and other web risks cannot harm you operations.
+                  BrowserBox 永远不会在您的机器或网络上运行来自远程页面的任何 JavaScript、小程序、CSS 或 HTML。通过完全隔离您的基础设施免受网络风险，这意味着恶意软件、漏洞利用、勒索软件、广告软件和其他网络风险无法危害您的运营。
                 </p>
               </div>
               <div class=graphic>
@@ -52,9 +48,9 @@ export default function Landing(state) {
                 <img src=/images/3rd-party/undraw/container.svg>
               </div>
               <div class=story>
-                <h1>The Highest Security. Complete Isolation.</h1>
+                <h1>最高安全性。完全隔离。</h1>
                 <p>
-                  BrowserBox never runs any remote code on your machine. Ever. We never run any JavaScript, applets, CSS and not even one tag of HTML on your machine that comes from the remote browser. Our platform is the only browser isolation system that can run on any device, and never runs any code on your machine. We provide a fully interactive image of the remote web page, that looks and feels just like browsing on your favorite consumer browser, but without any of the regular risks associated with that. 
+                  BrowserBox 永远不会在您的机器上运行任何远程代码。永远不会。我们永远不会在您的机器上运行来自远程浏览器的任何 JavaScript、小程序、CSS，甚至不会运行一个 HTML 标签。我们的平台是唯一可以在任何设备上运行的浏览器隔离系统，并且永远不会在您的机器上运行任何代码。我们提供远程网页的完全交互式图像，看起来和使用起来就像在您最喜欢的消费浏览器上浏览一样，但没有任何与此相关的常规风险。
                 </p>
               </div>
             </section>
@@ -64,23 +60,22 @@ export default function Landing(state) {
                 <img src=/images/3rd-party/undraw/future.svg>
               </div>
               <div class=story>
-                <h1>What is Browser isolation?</h1>
+                <h1>什么是浏览器隔离？</h1>
                 <p>
-                  Browser isolation is a security practise where you isolate 
-                  your network from the internet. All browsing is conducted over a secure channel, using an isolated, and remote, cloud browser. 
+                  浏览器隔离是一种安全实践，您可以将网络与互联网隔离。所有浏览都通过安全通道进行，使用隔离的远程云浏览器。
                 </p>
               </div>
             </section>
             <section class=introduction tabindex=0>
               <div class=points>
-                <h1>What is BrowserBox?</h1>
+                <h1>什么是 BrowserBox？</h1>
                 <ul>
-                  <li>Secure browsing, familiar interface. 
-                  <li>Browser isolation vendor
-                  <li>Cloud browser provider
-                  <li>Remote browser product
-                  <li>No install or download required.
-                  <li>Browser-as-a-service
+                  <li>安全浏览，熟悉的界面。
+                  <li>浏览器隔离供应商
+                  <li>云浏览器提供商
+                  <li>远程浏览器产品
+                  <li>无需安装或下载。
+                  <li>浏览器即服务
                 </ul>
               </div>
               <div class=graphic>
@@ -92,23 +87,23 @@ export default function Landing(state) {
                 <img src=/images/3rd-party/undraw/helpfulsign.svg>
               </div>
               <div class=story>
-                <h1>BrowserBox. The difference is the way it works.</h1>
+                <h1>BrowserBox。区别在于它的工作方式。</h1>
                 <p>
-                  BrowserBox is just one of many browser isolation vendors. You should pick the best vendor for your particular needs. BrowserBox focuses on providing excellent customer support, and the most similar user interface and experience to a regular insecure browser, without the risks. 
+                  BrowserBox 只是众多浏览器隔离供应商之一。您应该根据您的特定需求选择最好的供应商。BrowserBox 专注于提供出色的客户支持，以及最类似于常规不安全浏览器的用户界面和体验，但没有风险。
                 </p>
               </div>
             </section>
             <section class=security tabindex=0>
               <div class=points>
-                <h1>How does BrowserBox protect my privacy and security?</h1>
+                <h1>BrowserBox 如何保护我的隐私和安全？</h1>
                 <ul>
-                  <li>Remote cloud browsers
-                  <li>Complete browser isolation
-                  <li>Threat containment
-                  <li>All execution happens in remote DMZ
-                  <li>Codeless "interactive image" technology
-                  <li>Zero trust security
-                  <li>No JavaScript, cookies, HTML/CSS from the remote web page are sent to you, ever.
+                  <li>远程云浏览器
+                  <li>完全浏览器隔离
+                  <li>威胁遏制
+                  <li>所有执行都在远程 DMZ 中进行
+                  <li>无代码"交互式图像"技术
+                  <li>零信任安全
+                  <li>永远不会向您发送来自远程网页的 JavaScript、cookie、HTML/CSS。
                 </ul>
               </div>
               <div class=graphic>
@@ -120,23 +115,23 @@ export default function Landing(state) {
                 <img src=/images/3rd-party/undraw/undraw_hologram_fjwp.svg>
               </div>
               <div class=story>
-                <h1>How does browser isolation help secure my network?</h1>
+                <h1>浏览器隔离如何帮助保护我的网络？</h1>
                 <p>
-                  Our full isolation system means never is any JavaScript code, images, HTML, CSS or other assets from a remote page sent to you. You interact with the internet via a secure layer, similar to a scientist doing experiments in a fume hood or hazmat isolation in a biological safety cabinet. The principle is very similar with our total isolation system ensuring a constant "negative pressure" from the web to you. Meaning that no web content actually reaches you, except via a holographic image of that content that is fully interactive yet totally inert. 
+                  我们的完全隔离系统意味着永远不会向您发送来自远程页面的任何 JavaScript 代码、图像、HTML、CSS 或其他资产。您通过安全层与互联网交互，类似于科学家在通风橱中进行实验或在生物安全柜中进行危险品隔离。原理非常相似，我们的完全隔离系统确保从网络到您始终保持"负压"。这意味着实际上没有任何网络内容到达您，除非通过该内容的全息图像，该图像完全交互但完全惰性。
                 </p>
               </div>
             </section>
             <section class=protection tabindex=0>
               <div class=points>
-                <h1>What does BrowserBox stop?</h1>
+                <h1>BrowserBox 能阻止什么？</h1>
                 <ul>
-                  <li>Zero-day exploits
-                  <li>Malicious websites and webapps
-                  <li>Browser exploitation
-                  <li>Malware and viruses
-                  <li>Device rootkits
-                  <li>Adware and tracking
-                  <li>Ransomware
+                  <li>零日漏洞利用
+                  <li>恶意网站和网络应用
+                  <li>浏览器利用
+                  <li>恶意软件和病毒
+                  <li>设备 rootkit
+                  <li>广告软件和跟踪
+                  <li>勒索软件
                 </ul>
               </div>
               <div class=graphic>
@@ -148,21 +143,21 @@ export default function Landing(state) {
                 <img src=/images/3rd-party/undraw/mobilebrowsers.svg>
               </div>
               <div class=story>
-                <h1>Looks and feels just like a normal browser.</h1>
+                <h1>看起来和使用起来就像普通浏览器一样。</h1>
                 <p>
-                  BrowserBox provides a fully interactive image of the remote web page, that looks and feels just like browsing on your favorite consumer browser, but without any of the regular risks associated with that. You can easily open new tabs, watch video (at a reduced frame rate), download files and even play audio.
+                  BrowserBox 提供远程网页的完全交互式图像，看起来和使用起来就像在您最喜欢的消费浏览器上浏览一样，但没有任何与此相关的常规风险。您可以轻松打开新标签页、观看视频（以降低的帧率）、下载文件甚至播放音频。
                 </p>
               </div>
             </section>
             <section class=reliability tabindex=0>
               <div class=points>
-                <h1>How high-maintenance is BrowserBox?</h1>
+                <h1>BrowserBox 的维护成本有多高？</h1>
                 <ul>
-                  <li>Fully managed
-                  <li>Fully hosted
-                  <li>Completely familiar browser interface
-                  <li>Zero or minimal training required
-                  <li>Per-seat, subscription pricing
+                  <li>完全托管
+                  <li>完全托管
+                  <li>完全熟悉的浏览器界面
+                  <li>零或最少的培训要求
+                  <li>按席位、订阅定价
                 </ul>
               </div>
               <div class=graphic>
@@ -171,7 +166,7 @@ export default function Landing(state) {
             </section>
             <section class=cta>
               <a href=#membership-application class="register toggle-opener">
-                <span class=verbose-name>Apply for Membership</span> Now
+                <span class=verbose-name>申请会员</span> 现在
               </a>
             </section>
           </section>

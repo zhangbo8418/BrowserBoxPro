@@ -4,7 +4,7 @@
 				click=${_top.saveClick}>
 			<input
 				maxlength=3000
-				title="Search or address"
+				title="搜索或地址"
 				bond=${el => {
 					omniBoxInput = el;
 					_top.viewState.omniBoxInput = omniBoxInput;
@@ -18,8 +18,8 @@
 				name=address
 				placeholder="${
 					_top.tabs.length?
-						'Search or address' :
-						'Open a tab first'
+						'搜索或地址' :
+						'请先打开标签页'
 				}"
 				type=search
 				value="${_top.activeTab().url == 'about:blank' ? '' : _top.activeTab().url || ''}"
@@ -28,7 +28,7 @@
         ${disabled() ? 'disabled' : ''} 
         class=go
         title="${
-          disabled()? '(Go) Open a tab first' : 'Navigate, search or reload'
+          disabled()? '（前往）请先打开标签页' : '导航、搜索或重新加载'
         }" 
       >
         <img src="voodoo/assets/icons/refresh-ccw.svg">

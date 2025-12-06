@@ -11,7 +11,7 @@
   import {CONFIG, EXPEDITE, COMMAND_MAX_WAIT,DEBUG,GO_SECURE,sleep,throwAfter, KILL_TIME} from './common.js';
   import {stop} from '../branch-bbx-stop.js';
   import {start_ws_server} from './ws-server.js';
-  import {release,applicationCheck} from './hard/application.js';
+  // import {release,applicationCheck} from './hard/application.js'; // License check removed
 
   const BEGIN_AGAIN = 500;
   import {
@@ -24,7 +24,7 @@
   let lastDebugOrderId = -Infinity;
   let server;
   let targetSaver;
-  let licenseValid;
+  // let licenseValid; // License check removed - variable no longer needed
   //let zombie_started = false;
 
   if ( GO_SECURE && start_mode == "signup" ) {
@@ -41,26 +41,27 @@
     console.info(`Could not set process title. Current title: ${process.title}`, e);
   }
   
-  try {
-    licenseValid = await applicationCheck();
-  } catch(e) {
-    console.warn(`Application check error:`, e);
-    licenseValid = false;
-  }
-  if ( ! licenseValid ) {
-    console.log(`Queueing stop srv`, {licenseValid});
-    try {
-      if ( ! globalThis.megaKiller ) {
-        globalThis.megaKiller = setTimeout(
-          () => globalThis.shutDown(),
-          KILL_TIME
-        );
-      }
-    } catch(e) {
-      console.warn(`Error stopping. Trying again...`);
-      stop().finally(() => process.exit(1));
-    }
-  }
+  // License check removed
+  // try {
+  //   licenseValid = await applicationCheck();
+  // } catch(e) {
+  //   console.warn(`Application check error:`, e);
+  //   licenseValid = false;
+  // }
+  // if ( ! licenseValid ) {
+  //   console.log(`Queueing stop srv`, {licenseValid});
+  //   try {
+  //     if ( ! globalThis.megaKiller ) {
+  //       globalThis.megaKiller = setTimeout(
+  //         () => globalThis.shutDown(),
+  //         KILL_TIME
+  //       );
+  //     }
+  //   } catch(e) {
+  //     console.warn(`Error stopping. Trying again...`);
+  //     stop().finally(() => process.exit(1));
+  //   }
+  // }
 
   process.on('uncaughtException', err => {
     console.log('ue', err, err.stack);
@@ -117,7 +118,9 @@
   }
 
   export async function releaseLicense() {
-    return await release();
+    // License check removed - release function no longer needed
+    // return await release();
+    return Promise.resolve({ released: true });
   }
 
   export async function timedSend(command, port) {

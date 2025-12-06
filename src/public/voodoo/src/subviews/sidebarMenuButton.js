@@ -8,7 +8,7 @@ let sidebarMenuOpen = false;
 export function SidebarMenuButton(state) {
   sidebarMenuOpen = state.sidebarMenuActive;
   const buttonVal = R.skip(state.sidebarMenuActive ? CLOSE : OPEN);
-  const titleVal = state.sidebarMenuActive ? 'Close menu' : 'Open menu';
+  const titleVal = state.sidebarMenuActive ? '关闭菜单' : '打开菜单';
   return R`
     <nav class="controls sidebar-menu-button aux" stylist="styleNavControl styleSidebarMenuButton">
       <form submit=${[

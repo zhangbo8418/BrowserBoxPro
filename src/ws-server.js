@@ -39,7 +39,7 @@
   } from './common.js';
   import {releaseLicense, timedSend, eventSendLoop} from './server.js';
   import {MIN_TIME_BETWEEN_SHOTS, WEBP_QUAL} from './zombie-lord/screenShots.js';
-  import {validityCheck} from './hard/application.js'
+  // import {validityCheck} from './hard/application.js' // License check removed
   import {stop} from '../branch-bbx-stop.js';
 
   // legacy route import
@@ -1066,23 +1066,30 @@
     let runCount = 0;
     const checkers = async () => {
       if ( shuttingDown ) return;
-      const targets = zl.act.getTargets(zombie_port);
-      const licenseValid = await validityCheck({targets});
-      if ( ! licenseValid ) {
-        forceMeta({
-          applicationCheck: {
-            licenseValid
-          }
-        });
-        runCount++;
-        if ( runCount >= 2 ) {
-          console.log(`Queueing shutdown int win fail`, {licenseValid});
-          if ( ! globalThis.megaKiller ) {
-            globalThis.megaKiller = setTimeout(() => globalThis.shutDown(), KILL_TIME)
-          }
-        }
-      } else {
-        runCount = 0;
+      // License check removed
+      // const targets = zl.act.getTargets(zombie_port);
+      // const licenseValid = await validityCheck({targets});
+      // if ( ! licenseValid ) {
+      //   forceMeta({
+      //     applicationCheck: {
+      //       licenseValid
+      //     }
+      //   });
+      //   runCount++;
+      //   if ( runCount >= 2 ) {
+      //     console.log(`Queueing shutdown int win fail`, {licenseValid});
+      //     if ( ! globalThis.megaKiller ) {
+      //       globalThis.megaKiller = setTimeout(() => globalThis.shutDown(), KILL_TIME)
+      //     }
+      //   }
+      // } else {
+      //   runCount = 0;
+      //   clearTimeout(globalThis.megaKiller);
+      //   globalThis.megaKiller = null;
+      // }
+      // License check disabled - always reset counters
+      runCount = 0;
+      if (globalThis.megaKiller) {
         clearTimeout(globalThis.megaKiller);
         globalThis.megaKiller = null;
       }

@@ -491,7 +491,7 @@ export default class TerminalBrowser extends EventEmitter {
 
     // Draw OK button
     this.term.moveTo(buttonX, buttonY);
-    this.term.bgCyan().black('  [ OK ]  ');
+    this.term.bgCyan().black('  [ 确定 ]  ');
 
     // Handle input
     await new Promise(resolve => {
@@ -555,9 +555,9 @@ export default class TerminalBrowser extends EventEmitter {
 
     // Draw Yes/No buttons
     this.term.moveTo(yesButtonX, buttonY);
-    this.term.bgCyan().black(' [ Yes ] ');
+    this.term.bgCyan().black(' [ 是 ] ');
     this.term.moveTo(noButtonX, buttonY);
-    this.term.bgCyan().black(' [ No ]  ');
+    this.term.bgCyan().black(' [ 否 ]  ');
 
     // Handle input
     await new Promise(resolve => {
@@ -644,9 +644,9 @@ export default class TerminalBrowser extends EventEmitter {
 
       // Draw OK/Cancel buttons
       this.term.moveTo(okButtonX, buttonY);
-      this.term.bgCyan().black(' [ OK ]  ');
+      this.term.bgCyan().black(' [ 确定 ]  ');
       this.term.moveTo(cancelButtonX, buttonY);
-      this.term.bgCyan().black(' [ Cancel ] ');
+      this.term.bgCyan().black(' [ 取消 ] ');
       this.term.restoreCursor();
     };
 
@@ -773,9 +773,9 @@ export default class TerminalBrowser extends EventEmitter {
 
       // Draw OK/Cancel buttons
       this.term.moveTo(okButtonX, buttonY);
-      this.term.bgCyan().black(' [ OK ]  ');
+      this.term.bgCyan().black(' [ 确定 ]  ');
       this.term.moveTo(cancelButtonX, buttonY);
-      this.term.bgCyan().black(' [ Cancel ] ');
+      this.term.bgCyan().black(' [ 取消 ] ');
       this.term.restoreCursor();
     };
 
@@ -961,9 +961,9 @@ export default class TerminalBrowser extends EventEmitter {
 
       // Draw OK/Cancel buttons
       this.term.moveTo(okButton.x, okButton.y);
-      this.term.bgCyan().black(' [ OK ]  ');
+      this.term.bgCyan().black(' [ 确定 ]  ');
       this.term.moveTo(cancelButton.x, cancelButton.y);
-      this.term.bgCyan().black(' [ Cancel ] ');
+      this.term.bgCyan().black(' [ 取消 ] ');
     }
     // Add cases for 'alert' and 'confirm' if needed
     this.term.restoreCursor();

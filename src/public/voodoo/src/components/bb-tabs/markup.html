@@ -5,14 +5,14 @@
     state="${{
       tab,
       index,
-      title: tab.title === 'about:blank' ? 'blank' : tab.title,
+      title: tab.title === 'about:blank' ? '空白' : tab.title,
       active: tab.targetId === state.activeTarget
     }}" >
   </bb-select-tab>
   `)}
   <span class="new" stylist="styleTabSelector" role="button"
     click=${click => createTab(click)}>
-    <button class=new title="New tab" accesskey="s">
+    <button class=new title="新建标签页" accesskey="s">
       <img src="voodoo/assets/icons/plus.svg">
     </button>
   </li>

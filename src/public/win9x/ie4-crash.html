@@ -301,7 +301,7 @@
         }
 
         /* ---------- UI helpers ---------- */
-        function updateStatus(text){ var el=statusBar; if (el) el.innerHTML = 'Status: ' + text; }
+        function updateStatus(text){ var el=statusBar; if (el) el.innerHTML = '状态：' + text; }
 
         function setControlsEnabled(isEnabled){
           if (backButton)    backButton.disabled    = !isEnabled;
@@ -319,7 +319,7 @@
         function handleReconnection(){
           if (isNetworkError) {
             isNetworkError = false;
-            updateStatus('Connection re-established. Syncing viewport...');
+            updateStatus('连接已重新建立。正在同步视口...');
             setTimeout(sendViewportSize, VIEWPORT_SYNC_DELAY_MS);
           }
         }
@@ -344,8 +344,8 @@
             sessionToken = '';
             activeTabId = null;
             lastKnownFrameTimestamp = 0;
-            if (connectButton) connectButton.innerHTML = 'Connect';
-            updateStatus('Disconnected.');
+            if (connectButton) connectButton.innerHTML = '连接';
+            updateStatus('已断开连接。');
             setControlsEnabled(false);
             safeClearChildNodes(tabBar);
             if (urlInput) urlInput.value = '';
@@ -355,7 +355,7 @@
           sessionToken = tokenInput ? tokenInput.value : '';
           if (!sessionToken) { alert('Please enter a session token.'); return; }
 
-          updateStatus('Connecting...');
+          updateStatus('正在连接...');
           isConnected = true; // don’t block on JSONP ack
 
           connect();          // fire-and-forget
@@ -373,8 +373,8 @@
 
         function connect(){
           var url = API_BASE_PATH + '/connect?session_token=' + encodeURIComponent(sessionToken) + '&ran=' + Math.random();
-          getJSON(url, function(){ updateStatus('Connected (ack).'); },
-                       function(){ updateStatus('Connected (no ack).'); });
+          getJSON(url, function(){ updateStatus('已连接（确认）。'); },
+                       function(){ updateStatus('已连接（未确认）。'); });
         }
 
         function updateTabs(){
@@ -440,12 +440,12 @@
             if (oldImage) { oldImage.onload = oldImage.onerror = null; parent.removeChild(oldImage); }
             remoteScreen = newImage;
             remoteScreen.alt = "BrowserBox View";
-            updateStatus('Frame ' + (lastKnownFrameTimestamp || '?') + ' loaded.');
+            updateStatus('帧 ' + (lastKnownFrameTimestamp || '?') + ' 已加载。');
             _gettingFrame = false;
             pollForNextFrame();
           };
           newImage.onerror = function(){
-            if (!isNetworkError) { isNetworkError = true; updateStatus('Connection error. Retrying...'); }
+            if (!isNetworkError) { isNetworkError = true; updateStatus('连接错误。正在重试...'); }
             _gettingFrame = false;
             setTimeout(pollForNextFrame, POLLING_INTERVAL_MS);
           };
@@ -705,14 +705,14 @@
             <button id="back-button" class="omni-button" disabled>Back</button>
             <button id="forward-button" class="omni-button" disabled>Forward</button>
             <input type="text" id="url-input" disabled onfocus="isUrlBarFocused = true;" onblur="isUrlBarFocused = false;">
-            <button id="go-button" class="omni-button" disabled>Go</button>
+            <button id="go-button" class="omni-button" disabled>前往</button>
           </div>
         </td>
       </tr>
       <tr style="height: 100%;"><td id="content-pane">
-        <img id="remote-screen" src="placeholder.gif" alt="Loading Remote Browser View ..." style="width: 100%; height: 100%;">
+        <img id="remote-screen" src="placeholder.gif" alt="正在加载远程浏览器视图..." style="width: 100%; height: 100%;">
       </td></tr>
-      <tr style="height: 20px;"><td><div id="status-bar">Status: Disconnected.</div></td></tr>
+      <tr style="height: 20px;"><td><div id="status-bar">状态：已断开连接。</div></td></tr>
     </table>
 
     <div id="jsonp-frames">

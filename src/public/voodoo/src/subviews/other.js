@@ -40,18 +40,18 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
         if ( currentModal ) {
           // the defaults here are defaults when there *is* a current modal
           ({
-            msg:msg = 'Empty',
+            msg:msg = '空',
             type,
             token:token = '',
             url:url = '',
-            title:title = 'Untitled',
+            title:title = '未命名',
             el:currentModalEl,
             requestId:requestId = '',
             mode:mode = '',
             sessionId:sessionId = '',
             accept: accept = '',
-            submitText:submitText = 'Submit',
-            cancelText:cancelText = 'Cancel',
+            submitText:submitText = '提交',
+            cancelText:cancelText = '取消',
             otherButton:otherButton = null,
             working:working = false,
           } = currentModal);
@@ -94,10 +94,10 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
               }">
               <form method=dialog>
                 <fieldset>
-                  <legend><h1>Alert! &ndash; page says:</h1></legend>
-                  <p class=message value=message>${msg||'You are alerted.'}</p>
+                  <legend><h1>警告！&ndash; 页面提示：</h1></legend>
+                  <p class=message value=message>${msg||'您收到了一条警告。'}</p>
                   <p>
-                    <button class=ok title="OK, I got it." value=ok>Got it.</button>
+                    <button class=ok title="好的，我知道了。" value=ok>知道了</button>
                   </p>
                 </fieldset>
               </form>
@@ -107,11 +107,11 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
               }">
               <form method=dialog>
                 <fieldset>
-                  <legend><h1>Confirm &ndash; page asks:</h1></legend>
-                  <p class=message value=message>${msg||'You are asked to confirm'}</p>
+                  <legend><h1>确认 &ndash; 页面询问：</h1></legend>
+                  <p class=message value=message>${msg||'您被要求确认'}</p>
                   <p>
-                    <button class=ok title="Confirm" value=ok>Confirm</button>
-                    <button class=cancel title="Deny" value=cancel>Deny</button>
+                    <button class=ok title="确认" value=ok>确认</button>
+                    <button class=cancel title="拒绝" value=cancel>拒绝</button>
                   </p>
                 </fieldset>
               </form>
@@ -121,14 +121,14 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
               }">
               <form method=dialog>
                 <fieldset>
-                  <legend><h1>Prompt &ndash; page asks:</h1></legend>
-                  <p class=message value=message>${msg||'You are prompted for information:'}</p>
+                  <legend><h1>提示 &ndash; 页面询问：</h1></legend>
+                  <p class=message value=message>${msg||'请输入信息：'}</p>
                   <p>
                     <input type=text name=response>
                   </p>
                   <p>
-                    <button class=ok title="Send" value=ok>Send</button>
-                    <button class=cancel title="Dismiss" value=cancel>Dismiss</button>
+                    <button class=ok title="发送" value=ok>发送</button>
+                    <button class=cancel title="取消" value=cancel>取消</button>
                   </p>
                 </fieldset>
               </form>
@@ -138,11 +138,11 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
               }">
               <form method=dialog>
                 <fieldset>
-                  <legend><h1>The page unloading asks:</h1></legend>
-                  <p class=message value=message>${msg||'Are you sure you wish to leave?'}</p>
+                  <legend><h1>页面卸载时询问：</h1></legend>
+                  <p class=message value=message>${msg||'您确定要离开吗？'}</p>
                   <p>
-                    <button class=ok title="Leave" value=ok>Leave</button>
-                    <button class=cancel title="Remain" value=cancel>Remain</button>
+                    <button class=ok title="离开" value=ok>离开</button>
+                    <button class=cancel title="停留" value=cancel>停留</button>
                   </p>
                 </fieldset>
               </form>
@@ -152,14 +152,14 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
               }">
               <form method=dialog>
                 <fieldset>
-                  <legend><h1>&#x1f6c8; ${title || 'Info'}</h1></legend>
+                  <legend><h1>&#x1f6c8; ${title || '信息'}</h1></legend>
                   <p>
                     <textarea 
                       readonly class=message value=message rows=${Math.ceil(msg.length/25)+1}
                     >${msg}</textarea>
                   </p>
                   <p>
-                    <button class=ok title="Got it" value=ok>OK</button>
+                    <button class=ok title="知道了" value=ok>确定</button>
                   </p>
                 </fieldset>
               </form>
@@ -169,11 +169,11 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
               }">
               <form method=dialog>
                 <fieldset>
-                  <legend><h1>&#x1f6c8; ${title || 'Notice'}</h1></legend>
+                  <legend><h1>&#x1f6c8; ${title || '通知'}</h1></legend>
                   <p>
-                  <p class=message value=message>${msg||'Empty notice'}</p>
+                  <p class=message value=message>${msg||'空通知'}</p>
                   <p>
-                    <button class=ok title=Acknowledge value=ok>OK</button>
+                    <button class=ok title=确认 value=ok>确定</button>
                     ${otherButton ? X`<button title="${otherButton.title}" click=${otherButton.onclick}>${otherButton.title}</button>` : ''}
                   </p>
                 </fieldset>
@@ -184,20 +184,20 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
               }">
               <form method=dialog>
                 <fieldset>
-                  <legend><h1>&#x1f512; ${title || 'Authentication'}</h1></legend>
-                  <p class=message value=message>${msg||'Empty notice'}</p>
+                  <legend><h1>&#x1f512; ${title || '身份验证'}</h1></legend>
+                  <p class=message value=message>${msg||'空通知'}</p>
                   <input type=hidden name=requestid value=${requestId}>
                   <p>
                     <input type=text 
                       autocomplete=username
-                      name=username placeholder=username maxlength=140>
+                      name=username placeholder=用户名 maxlength=140>
                   <p>
                     <input type=password 
                       autocomplete=current-password
-                      name=password placeholder=password maxlength=140>
+                      name=password placeholder=密码 maxlength=140>
                   <p>
-                    <button click=${click => respondWithAuth(click, state)}>Submit</button>
-                    <button click=${click => respondWithCancel(click, state)}>Cancel</button>
+                    <button click=${click => respondWithAuth(click, state)}>提交</button>
+                    <button click=${click => respondWithCancel(click, state)}>取消</button>
                 </fieldset>
               </form>
             </article>
@@ -206,13 +206,13 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
               }">
               <form method=POST action=/file enctype=multipart/form-data>
                 <fieldset>
-                  <legend><h1>&#x1f4c1; ${title || 'File upload'}</h1></legend>
-                  <p class=message value=message>${msg||'Empty notice'}</p>
+                  <legend><h1>&#x1f4c1; ${title || '文件上传'}</h1></legend>
+                  <p class=message value=message>${msg||'空通知'}</p>
                   <input type=hidden name=sessionid value=${sessionId}>
                   <input type=hidden name=token value=${token}>
                   <p>
                     <label>
-                      Select ${multiple?'one or more files':'one file'}.
+                      选择${multiple?'一个或多个文件':'一个文件'}。
                       <input type=file name=files ${multiple?'multiple':''} accept="${accept}">
                     </label>
                   <p>
@@ -245,15 +245,15 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
                   }, 300);
                 }}>
                 <fieldset>
-                  <legend><h1>&#x2348; ${title || 'Open app'}</h1></legend>
+                  <legend><h1>&#x2348; ${title || '打开应用'}</h1></legend>
                   <p class=message value=message>${
-                    `This page is asking to open an external app using URL: ${
+                    `此页面请求使用以下 URL 打开外部应用：${
                       url.slice(0,140) + (url.length > 140 ? '...' : '')
                     }`
                   }</p>
                 <p>
-                  <button type=reset>Stop it</button>
-                  <button>Open external app</button>
+                  <button type=reset>停止</button>
+                  <button>打开外部应用</button>
                 </p>
               </form>
             </article>
@@ -265,7 +265,7 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
     }
 
     function requestModalBeClosedFirst(unload) {
-      const message = "Please close the modal first";
+      const message = "请先关闭模态框";
       const obj = (unload || window.event);
       if ( obj ) obj.returnValue = message;
       return message;
@@ -281,7 +281,7 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
         body
       };
       Object.assign(state.viewState.currentModal, {
-        submitText: 'Uploading...',
+        submitText: '上传中...',
         working: true
       });
       Modals(state);
@@ -306,13 +306,13 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
         body
       };
       Object.assign(state.viewState.currentModal, {
-        cancelText: 'Canceling...',
+        cancelText: '取消中...',
         working: true
       });
       Modals(state);
       const resp = await globalThis.uberFetch(form.action, request).then(r => r.json());
       if ( resp.error ) {
-        alert(`An error occurred`);
+        alert(`发生错误`);
         console.log({resp});
       } else {
         DEBUG.val && console.log(`Success cancelling file attachment`, resp); 
@@ -426,9 +426,9 @@ import {s as R, c as X} from '../../node_modules/bang.html/src/vv/vanillaview.js
       return R`
         <article class="permission-request hidden">
           <h1>${permission}</h1>
-          <p class=request>${page} is requesting ${permission} permission. The details are: ${request}</p>
-          <button class=grant>Grant</button>
-          <button class=deny>Deny</button>
+          <p class=request>${page} 正在请求 ${permission} 权限。详细信息：${request}</p>
+          <button class=grant>授予</button>
+          <button class=deny>拒绝</button>
         </article>
       `;
     }

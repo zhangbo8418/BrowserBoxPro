@@ -7,12 +7,12 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/octagon-alert.svg">
-            Alert
+            警告
           </h1>
         </legend>
-        <p class=message value=message>${viewState?.currentModal?.msg||'You are alerted.'}</p>
+        <p class=message value=message>${viewState?.currentModal?.msg||'您收到了一条警告。'}</p>
         <p>
-          <button type=reset class=ok title="OK, I got it." value=ok>Got it.</button>
+          <button type=reset class=ok title="好的，我知道了。" value=ok>知道了</button>
         </p>
       </fieldset>
     </form>
@@ -25,13 +25,13 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/circle-help.svg">
-            Confirm
+            确认
           </h1>
         </legend>
-        <p class=message value=message>${viewState?.currentModal?.msg||'You are asked to confirm'}</p>
+        <p class=message value=message>${viewState?.currentModal?.msg||'您被要求确认'}</p>
         <p>
-          <button type=reset class=cancel title="Deny" value=cancel>No</button>
-          <button type=submit class=ok title="Confirm" value=ok>Yes</button>
+          <button type=reset class=cancel title="拒绝" value=cancel>否</button>
+          <button type=submit class=ok title="确认" value=ok>是</button>
         </p>
       </fieldset>
     </form>
@@ -44,16 +44,16 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/pencil.svg">
-            Prompt
+            提示
           </h1>
         </legend>
-        <p class=message value=message><label for=prompt-response>${viewState?.currentModal?.msg||'You are prompted for information:'}</label></p>
+        <p class=message value=message><label for=prompt-response>${viewState?.currentModal?.msg||'请输入信息：'}</label></p>
         <p>
           <input id=prompt-response type=text name=response>
         </p>
         <p>
-          <button type=reset class=cancel title="Dismiss" value=cancel>Dismiss</button>
-          <button type=submit class=ok title="Send" value=ok>Send</button>
+          <button type=reset class=cancel title="取消" value=cancel>取消</button>
+          <button type=submit class=ok title="发送" value=ok>发送</button>
         </p>
       </fieldset>
     </form>
@@ -66,16 +66,16 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/clipboard.svg">
-            Paste into Page
+            粘贴到页面
           </h1>
         </legend>
-        <p class=message value=message><label for=paste-response>${viewState?.currentModal?.msg||'Enter information to paste'}</label></p>
+        <p class=message value=message><label for=paste-response>${viewState?.currentModal?.msg||'输入要粘贴的信息'}</label></p>
         <p>
           <textarea id=paste-response name=response maxlen=32000 autofocus></textarea>
         </p>
         <p>
-          <button type=reset class=cancel title="Dismiss" value=cancel>Dismiss</button>
-          <button type=submit click=${click => _host.sendPaste(click, state)}>Paste</button>
+          <button type=reset class=cancel title="取消" value=cancel>取消</button>
+          <button type=submit click=${click => _host.sendPaste(click, state)}>粘贴</button>
         </p>
       </fieldset>
     </form>
@@ -88,16 +88,16 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/log-out.svg">
-            Reload Site?
+            重新加载网站？
           </h1>
           <i>
-            Your changes may not be saved. The page unloading asks
+            您的更改可能未保存。页面卸载时询问
           </i>
         </legend>
-        <p class=message value=message>${viewState?.currentModal?.msg||'Are you sure you wish to leave?'}</p>
+        <p class=message value=message>${viewState?.currentModal?.msg||'您确定要离开吗？'}</p>
         <p>
-          <button type=reset class=cancel title="Remain" value=cancel>Remain</button>
-          <button type=submit class=ok title="Leave" value=ok>Leave</button>
+          <button type=reset class=cancel title="停留" value=cancel>停留</button>
+          <button type=submit class=ok title="离开" value=ok>离开</button>
         </p>
       </fieldset>
     </form>
@@ -110,7 +110,7 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/info.svg">
-            ${viewState?.currentModal?.title || 'Info'}
+            ${viewState?.currentModal?.title || '信息'}
           </h1>
         </legend>
         <p>
@@ -118,7 +118,7 @@
           >${viewState?.currentModal?.msg}</textarea>
         </p>
         <p>
-          <button type=submit class=ok title="Got it" value=ok>Dismiss</button>
+          <button type=submit class=ok title="知道了" value=ok>关闭</button>
         </p>
       </fieldset>
     </form>
@@ -131,11 +131,11 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/bell.svg">
-            ${viewState?.currentModal?.title || 'Notice'}
+            ${viewState?.currentModal?.title || '通知'}
           </h1>
         </legend>
         <p>
-        <p class=message value=message>${viewState?.currentModal?.msg||'Empty notice'}</p>
+        <p class=message value=message>${viewState?.currentModal?.msg||'空通知'}</p>
         <p>
           ${viewState?.currentModal?.link ?
             G`<a title="${viewState?.currentModal?.link.title}" target=${viewState?.currentModal?.link.target} href=${viewState?.currentModal?.link.href}>${viewState?.currentModal?.link.title}</a>` 
@@ -147,7 +147,7 @@
             :
             (DEBUG.debugOtherButton  && console.log('No have other button'), G`<!-- other button -->`)
           }
-          <button type=submit class=ok title=Acknowledge value=ok>OK</button>
+          <button type=submit class=ok title=确认 value=ok>确定</button>
         </p>
       </fieldset>
     </form>
@@ -160,13 +160,13 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/bell.svg">
-            <span onbond=${el => _host.copyBoxTitle = el} class=title>${state.title || 'Copy'}</span>
+            <span onbond=${el => _host.copyBoxTitle = el} class=title>${state.title || '复制'}</span>
           </h1>
         </legend>
         <p>
         <textarea cols=80 rows=5 onbond=${(el) => {
             _host.copyBoxTextarea = el; 
-          }} readonly class=message value=message>${viewState?.currentModal?.msg||'No text to copy'}</textarea>
+          }} readonly class=message value=message>${viewState?.currentModal?.msg||'没有可复制的文本'}</textarea>
         <p>
           ${viewState?.currentModal?.link ?
             G`<a title="${viewState?.currentModal?.link.title}" target=${viewState?.currentModal?.link.target} href=${viewState?.currentModal?.link.href}>${viewState?.currentModal?.link.title}</a>` 
@@ -178,7 +178,7 @@
             :
             (DEBUG.debugOtherButton  && console.log('No have other button'), G`<!-- other button -->`)
           }
-          <button type=submit class=ok title=Acknowledge value=ok>OK</button>
+          <button type=submit class=ok title=确认 value=ok>确定</button>
         </p>
       </fieldset>
     </form>
@@ -191,7 +191,7 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/shield-alert.svg">
-            ${title || 'Authentication'}
+            ${title || '身份验证'}
           </h1>
           <i>${viewState?.currentModal?.msg||''}</i>
         </legend>
@@ -199,13 +199,13 @@
         <p>
           <input type=text 
             autocomplete=username
-            name=username placeholder=username maxlength=140>
+            name=username placeholder=用户名 maxlength=140>
         <p>
           <input type=password 
             autocomplete=current-password
-            name=password placeholder=password maxlength=140>
+            name=password placeholder=密码 maxlength=140>
         <p>
-          <button type=submit value=ok click=${click => _host.respondWithAuth(click, state)}>Submit</button>
+          <button type=submit value=ok click=${click => _host.respondWithAuth(click, state)}>提交</button>
         </p>
       </fieldset>
     </form>
@@ -218,7 +218,7 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/folder-up.svg">
-            ${viewState?.currentModal?.title || 'File Upload'}
+            ${viewState?.currentModal?.title || '文件上传'}
           </h1>
           <i>${viewState?.currentModal?.msg||''}</i>
         </legend>
@@ -226,7 +226,7 @@
         <input type=hidden name=token value=${viewState?.currentModal?.token}>
         <p>
           <label>
-            Select ${viewState?.currentModal?.multiple?'one or more files':'one file'}.
+            选择${viewState?.currentModal?.multiple?'一个或多个文件':'一个文件'}。
             <input type=file name=files ${viewState?.currentModal?.multiple?'multiple':''} accept="${viewState?.currentModal?.accept}">
           </label>
         <p>
@@ -235,13 +235,13 @@
             value=cancel
             ${viewState?.currentModal?.working?'disabled':''} 
             click=${click => _host.cancelFileChooser(click)}
-          >${viewState?.currentModal?.cancelText || 'Cancel'}</button>
+          >${viewState?.currentModal?.cancelText || '取消'}</button>
           <button 
             type=submit
             value=ok
             ${viewState?.currentModal?.working?'disabled':''} 
             click=${click => _host.chooseFile(click)}
-          >${viewState?.currentModal?.submitText || 'Upload'}</button>
+          >${viewState?.currentModal?.submitText || '上传'}</button>
       </fieldset>
     </form>
   </article>
@@ -268,18 +268,18 @@
         <legend>
           <h1>
             <img src="voodoo/assets/icons/external-link.svg">
-            ${viewState?.currentModal?.title || 'Open app'}
+            ${viewState?.currentModal?.title || '打开应用'}
           </h1>
         </legend>
         <p class=message value=message>${
-          `This page is asking to open an external app using URL: ${viewState?.currentModal?.url ? 
+          `此页面请求使用以下 URL 打开外部应用：${viewState?.currentModal?.url ? 
               viewState?.currentModal?.url?.slice?.(0,140) + (viewState?.currentModal?.url?.length > 140 ? '...' : '')
-              : 'unknown URL'
+              : '未知 URL'
           }`
         }</p>
       <p>
-        <button type=reset value=cancel>Stop it</button>
-        <button type=submit value=ok>Open external app</button>
+        <button type=reset value=cancel>停止</button>
+        <button type=submit value=ok>打开外部应用</button>
       </p>
     </form>
   </article>
@@ -288,19 +288,19 @@
     }">
     <form method=GET action="${viewState?.currentModal?.url}" target=_top submit=${submission => {
         submission.preventDefault(); 
-        alert("Save settings");
+        alert("保存设置");
       }}>
       <fieldset>
         <legend>
           <h1>
             <img src="voodoo/assets/icons/cog.svg">
-            BrowserBox Pro Settings
+            BrowserBox Pro 设置
           </h1>
         </legend>
       <p>
         <label>
           <span class=legend 
-          >Show audio status</span>
+          >显示音频状态</span>
           <label class="switch">
             <input type="checkbox">
             <span class="slider round"></span>
@@ -309,15 +309,15 @@
       <p>
         <label>
           <span class=legend 
-          >Show WebRTC status</span>
+          >显示 WebRTC 状态</span>
           <label class="switch">
             <input type="checkbox">
             <span class="slider round"></span>
           </label>
         </label>
       <p>
-        <button type=reset value=cancel click=${() => confirm("Sure?")}>Reset to defaults</button>
-        <button type=submit value=ok>Save</button>
+        <button type=reset value=cancel click=${() => confirm("确定？")}>重置为默认值</button>
+        <button type=submit value=ok>保存</button>
       </p>
     </form>
     ${!!viewState?.currentModal?.el && (viewState?.currentModal?.el === viewState.ModalRef.settings ) ? 

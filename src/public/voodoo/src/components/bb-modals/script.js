@@ -47,19 +47,19 @@ class BBModal extends Base {
       // the defaults here are defaults when there *is* a current modal
       state._top.DEBUG.debugModal && console.log(`Prepare`, {currentModal});
       ({
-        msg:msg = '2 Empty',
+        msg:msg = '2 空',
         type,
         highlight: highlight = false,
         token:token = '',
         url:url = '',
-        title:title = 'Untitled',
+        title:title = '未命名',
         el:currentModalEl,
         requestId:requestId = '',
         mode:mode = '',
         sessionId:sessionId = '',
         accept: accept = '',
-        submitText:submitText = 'Submit',
-        cancelText:cancelText = 'Cancel',
+        submitText:submitText = '提交',
+        cancelText:cancelText = '取消',
         otherButton:otherButton = null,
         link:link = null,
         working:working = false,
@@ -170,15 +170,15 @@ class BBModal extends Base {
           DEBUG.debugClipboard && console.log(`Trying to copy`);
           await navigator.clipboard.writeText(this.copyBoxTextarea.value);
           DEBUG.debugClipboard && console.info(`Copied to clipboard`);
-          secondTitle = ' - Copied to Clipboard!';
+          secondTitle = ' - 已复制到剪贴板！';
         } catch(e) {
           DEBUG.debugClipboard && console.warn(`Could not copy to clipboard`, title);
           this.latestCopyValue = this.copyBoxTextarea.value;
           otherButton = {
-            title: 'Copy',
+            title: '复制',
             onClick: 'copyToClipboard',
           };
-          secondTitle = ' - Click Copy';
+          secondTitle = ' - 点击复制';
         }
         currentModal = {
           type, token, mode, 
@@ -215,9 +215,9 @@ class BBModal extends Base {
     event.stopPropagation();
     // try to copy to clipboard
     navigator.clipboard.writeText(this.latestCopyValue).then(
-      () => this.copyBoxTitle.innerText = 'Copied to Clipboard!'
+      () => this.copyBoxTitle.innerText = '已复制到剪贴板！'
     ).catch(
-      () => this.copyBoxTitle.innerText = 'Copy failed. Please manually copy.'
+      () => this.copyBoxTitle.innerText = '复制失败。请手动复制。'
     );
   }
 
@@ -357,7 +357,7 @@ class BBModal extends Base {
       body
     };
     Object.assign(state.viewState.currentModal, {
-      submitText: 'Uploading...',
+      submitText: '上传中...',
       working: true
     });
     this.prepareState(state.viewState.currentModal);
@@ -389,7 +389,7 @@ class BBModal extends Base {
       body
     };
     Object.assign(state.viewState.currentModal, {
-      cancelText: 'Canceling...',
+      cancelText: '取消中...',
       working: true
     });
     this.prepareState(state.viewState.currentModal);

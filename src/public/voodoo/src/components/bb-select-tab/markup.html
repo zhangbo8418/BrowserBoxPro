@@ -7,9 +7,9 @@ ${{key: tab.targetId}}
       mousedown=${() => {
         _top.viewState.lastActive = document.deepActiveElement;
       }}
-      title="${title || 'Bring to front'}"
+      title="${title || '置于前台'}"
       href=/tabs/${tab.targetId}>${title}</a>
-    <button class=close title="Close tab" ${active?'accesskey=d':''}
+    <button class=close title="关闭标签页" ${active?'accesskey=d':''}
       click=${click => _top.closeTab(click, tab, index)}>
       <img class=small src="voodoo/assets/icons/trash-2.svg">
     </button>

@@ -20,7 +20,7 @@ export function OmniBox(state) {
             click=${saveClick}>
           <input 
             maxlength=3000
-            title="Search or address"
+            title="搜索或地址"
             bond=${el => {
               omniBoxInput = el;
               state.viewState.omniBoxInput = omniBoxInput;
@@ -34,14 +34,14 @@ export function OmniBox(state) {
             name=address 
             placeholder="${
               state.tabs.length? 
-                'Search or address' : 
-                'Open a tab first'
+                '搜索或地址' : 
+                '请先打开标签页'
             }" 
             type=search 
             value="${activeTab.url == 'about:blank' ? '' : activeTab.url || ''}"
           >
           <button ${disabled ? 'disabled' : ''} title="${
-            disabled? '(Go) Open a tab first' : 'Navigate or Search'
+            disabled? '（前往）请先打开标签页' : '导航或搜索'
           }" class=go>${
             R.skip(CHAR.loadReload)
           }</button>

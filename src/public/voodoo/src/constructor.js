@@ -697,19 +697,19 @@
             state.topBarComponent.updateDownloadStatus(downloPro);
           });
 
-        // application
-          queue.addMetaListener('applicationCheck', ({applicationCheck}) => {
-            if ( ! applicationCheck?.licenseValid ) {
-              state.applicationCheck = applicationCheck;
-              state.viewState.modalComponent.openModal({
-                modal: {
-                  type: 'notice',
-                  title: 'BrowserBox Activation',
-                  message: 'Your copy of BrowserBox is not activated. Purchase a License Key at https://dosaygo.com or by contacting sales@dosaygo.com to enjoy uninterrupted usage and ensure full application security.'
-                }
-              });
-            }
-          });
+        // application - license check removed
+          // queue.addMetaListener('applicationCheck', ({applicationCheck}) => {
+          //   if ( ! applicationCheck?.licenseValid ) {
+          //     state.applicationCheck = applicationCheck;
+          //     state.viewState.modalComponent.openModal({
+          //       modal: {
+          //         type: 'notice',
+          //         title: 'BrowserBox Activation',
+          //         message: 'Your copy of BrowserBox is not activated. Purchase a License Key at https://dosaygo.com or by contacting sales@dosaygo.com to enjoy uninterrupted usage and ensure full application security.'
+          //       }
+          //     });
+          //   }
+          // });
 
         // audio login
           let settingUp = false;

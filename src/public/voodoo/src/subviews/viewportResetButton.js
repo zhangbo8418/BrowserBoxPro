@@ -13,7 +13,7 @@ export function ViewportResetButton() {
         e => e.preventDefault(),
         () => window._voodoo_asyncSizeTab({resetRequested:true})
       ]}>
-        <button title="Resize viewport" accesskey=v>${buttonVal}</button>
+        <button title="调整视口大小" accesskey=v>${buttonVal}</button>
       </form>
     </nav>
   `;
