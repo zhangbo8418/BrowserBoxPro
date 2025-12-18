@@ -9,7 +9,14 @@
 # 
 ##########################################################
 
-if [[ -n "$BBX_DEBUG" ]]; then
+is_debug_enabled() {
+  case "$(printf '%s' "${BBX_DEBUG:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|y|on|debug) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if is_debug_enabled; then
   export BBX_DEBUG
   set -x
 fi
@@ -43,6 +50,47 @@ EOF
     printf "${NC}\n"
 }
 
+# Prefer GH_TOKEN if provided; fall back to GITHUB_TOKEN so private/internal
+# releases can be accessed without extra env juggling.
+if [[ -z "${GH_TOKEN:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
+  GH_TOKEN="$GITHUB_TOKEN"
+fi
+
+# Function to find Tor control auth cookie across different platforms
+find_tor_cookie() {
+  local cookie_locations=(
+    # macOS Homebrew (ARM)
+    "/opt/homebrew/var/lib/tor/control_auth_cookie"
+    # macOS Homebrew (Intel)
+    "/usr/local/var/lib/tor/control_auth_cookie"
+    # Tor Browser (macOS)
+    "${HOME}/Library/Application Support/TorBrowser-Data/Tor/control_auth_cookie"
+    # Linux systemd
+    "/run/tor/control.authcookie"
+    # Linux Debian/Ubuntu standard
+    "/var/lib/tor/control_auth_cookie"
+    # Linux manual/alternate
+    "/var/run/tor/control.authcookie"
+    # User home directory
+    "${HOME}/.tor/control_auth_cookie"
+  )
+
+  for cookie in "${cookie_locations[@]}"; do
+    if [[ -r "$cookie" ]]; then
+      echo "$cookie"
+      return 0
+    fi
+    # Try with sudo if not readable
+    if ${SUDO:-sudo} test -r "$cookie" 2>/dev/null; then
+      echo "$cookie"
+      return 0
+    fi
+  done
+
+  # Return empty if not found
+  return 1
+}
+
 OGARGS=("$@")
 
 protecc_win_sysadmins() {
@@ -56,6 +104,325 @@ protecc_win_sysadmins() {
         exit 1
     fi
 }
+
+# ====================================================================
+# BINARY DISTRIBUTION SUPPORT
+# Functions for downloading and managing pre-compiled BrowserBox binaries
+# ====================================================================
+
+# Configuration
+PUBLIC_REPO="${BBX_RELEASE_REPO:-BrowserBox/BrowserBox}"
+BINARY_NAME="browserbox"
+GLOBAL_BIN_DIR="/usr/local/bin"
+SUDO_BIN="$(command -v sudo || true)"
+
+# Prefer global install; require writable /usr/local/bin (or sudo)
+if [[ -w "$GLOBAL_BIN_DIR" ]]; then
+  BINARY_DIR="$GLOBAL_BIN_DIR"
+  INSTALL_CMD="install -m 755"
+  mkdir -p "$BINARY_DIR"
+else
+  if [[ -n "$SUDO_BIN" ]]; then
+    BINARY_DIR="$GLOBAL_BIN_DIR"
+    INSTALL_CMD="$SUDO_BIN install -m 755"
+    "$SUDO_BIN" mkdir -p "$BINARY_DIR"
+  else
+    echo -e "${RED}Cannot install to $GLOBAL_BIN_DIR (not writable and sudo unavailable).${NC}" >&2
+    echo "BrowserBox requires a global install; please run with sudo or make $GLOBAL_BIN_DIR writable." >&2
+    exit 1
+  fi
+fi
+
+BINARY_PATH="${BINARY_DIR}/${BINARY_NAME}"
+
+# Function to detect OS and architecture
+detect_platform() {
+  case "$(uname -s)" in
+    Linux*) echo "linux" ;;
+    Darwin*) echo "macos" ;;
+    *)
+      echo -e "${RED}Unsupported OS: $(uname -s)${NC}" >&2
+      echo "This installer only supports Linux and macOS." >&2
+      echo "For Windows, use: irm dosaygo.com/browserbox | iex" >&2
+      exit 1
+      ;;
+  esac
+}
+
+# Function to get the latest release tag from GitHub
+get_latest_release() {
+  # Skip API call if BBX_NO_UPDATE is set; if caller passed BBX_RELEASE_TAG, use it.
+  if [[ -n "$BBX_NO_UPDATE" ]]; then
+    if [[ -n "${BBX_RELEASE_TAG:-}" ]]; then
+      echo "$BBX_RELEASE_TAG"
+      return 0
+    fi
+    echo "unknown"
+    return 1
+  fi
+
+  local repo="$1"
+  local tag=""
+  if [[ "$repo" != "BrowserBox/BrowserBox" && -z "${GH_TOKEN:-}" ]]; then
+    echo -e "${RED}A token (GH_TOKEN or GITHUB_TOKEN) is required to read releases from private/internal repo ${repo}.${NC}" >&2
+    exit 1
+  fi
+
+  mkdir -p "$BB_CONFIG_DIR"
+  local cache_file="${BB_CONFIG_DIR}/latest_release_${repo//\//_}.cache"
+  local now ts cached
+  now="$(date +%s)"
+  if [[ -f "$cache_file" ]]; then
+    read -r ts cached <"$cache_file" || true
+    if [[ -n "$ts" && -n "$cached" ]] && (( now - ts < 3600 )); then
+      echo "$cached"
+      return 0
+    fi
+  fi
+
+  # Try using curl with GitHub API
+  if command -v curl >/dev/null 2>&1; then
+    local api_url="https://api.github.com/repos/${repo}/releases/latest"
+    local curl_auth=()
+    if [[ -n "${GH_TOKEN:-}" ]]; then
+      curl_auth=(-H "Authorization: Bearer ${GH_TOKEN}")
+    fi
+    local response
+    response=$(curl -sS --connect-timeout 10 "${curl_auth[@]}" "$api_url" 2>/dev/null || echo "")
+    
+    if [[ -n "$response" ]]; then
+      # Try jq first
+      if command -v jq >/dev/null 2>&1; then
+        tag=$(echo "$response" | jq -r '.tag_name // empty' 2>/dev/null)
+      else
+        # Fallback to sed
+        tag=$(echo "$response" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]\+\)".*/\1/p' | head -n1)
+      fi
+    fi
+  fi
+  
+  if [[ -z "$tag" ]]; then
+    echo -e "${RED}Failed to fetch latest release from ${repo}${NC}" >&2
+    exit 1
+  fi
+
+  printf '%s %s\n' "$now" "$tag" >"$cache_file" || true
+  
+  echo "$tag"
+}
+
+# Function to download the binary
+# Returns the path to the downloaded executable on stdout
+# All progress/logs go to stderr
+download_binary() {
+  local platform="$1"
+  local tag="$2"
+  local asset_name
+  case "$platform" in
+    macos) asset_name="browserbox-macos-arm64" ;;
+    linux) asset_name="browserbox-linux-x64" ;;
+    *) echo -e "${RED}Unsupported platform: $platform${NC}" >&2; exit 1 ;;
+  esac
+  
+  local temp_file
+  temp_file="$(mktemp "${TMPDIR:-/tmp}/browserbox.XXXX")"
+  
+  # Log to stderr >&2 so it is NOT captured by the caller
+  echo -e "${CYAN}Downloading BrowserBox ${tag} for ${platform}...${NC}" >&2
+  
+  if ! command -v curl >/dev/null 2>&1; then
+    echo -e "${RED}Error: curl is required but not installed.${NC}" >&2
+    exit 1
+  fi
+  
+  local curl_auth=()
+  if [[ -n "${GH_TOKEN:-}" ]]; then
+    curl_auth=(-H "Authorization: Bearer ${GH_TOKEN}")
+  fi
+
+  # 1. HANDLE PRIVATE / INTERNAL RELEASES
+  if [[ -n "${GH_TOKEN:-}" || "$PUBLIC_REPO" != "BrowserBox/BrowserBox" ]]; then
+    local release_json asset_id api_download_url
+    if [[ -z "${GH_TOKEN:-}" ]]; then
+      echo -e "${RED}GH_TOKEN is required for private repo ${PUBLIC_REPO}${NC}" >&2
+      exit 1
+    fi
+
+    # Fetch metadata (Silent -sS, errors go to stderr)
+    release_json=$(curl -sS --fail -H "Authorization: Bearer ${GH_TOKEN}" "https://api.github.com/repos/${PUBLIC_REPO}/releases/tags/${tag}") || {
+      echo -e "${RED}Failed to fetch release metadata for ${tag}${NC}" >&2
+      exit 1
+    }
+
+    # Parse Asset ID
+    if command -v jq >/dev/null 2>&1; then
+      asset_id=$(printf '%s' "$release_json" | jq -r --arg name "$asset_name" '.assets[] | select(.name==$name) | .id' | head -n1)
+    else
+      asset_id=$(printf '%s\n' "$release_json" | awk -v name="$asset_name" '
+        BEGIN{RS="{";FS=","}
+        {
+          has=0;id=""
+          for(i=1;i<=NF;i++){
+            if($i ~ "\"name\"" && $i ~ name){has=1}
+            if($i ~ "\"id\""){gsub(/[^0-9]/,"",$i); id=$i}
+          }
+          if(has && id!=""){print id; exit}
+        }')
+    fi
+
+    if [[ -z "$asset_id" ]]; then
+      echo -e "${RED}Asset ${asset_name} not found on release ${tag}${NC}" >&2
+      exit 1
+    fi
+
+    api_download_url="https://api.github.com/repos/${PUBLIC_REPO}/releases/assets/${asset_id}"
+    
+    # DOWNLOAD PRIVATE BINARY
+    # IMPORTANT: --progress-bar writes to stderr by default.
+    # Do NOT use 2>&1 here, or the bar will be captured.
+    if ! curl -L --fail --progress-bar --connect-timeout 60 \
+        -H "Authorization: Bearer ${GH_TOKEN}" \
+        -H "Accept: application/octet-stream" \
+        -o "$temp_file" "$api_download_url"; then
+      echo -e "${RED}Failed to download binary via asset API${NC}" >&2
+      rm -f "$temp_file"
+      exit 1
+    fi
+
+  else
+    # 2. HANDLE PUBLIC RELEASES
+    local download_url="https://github.com/${PUBLIC_REPO}/releases/download/${tag}/${asset_name}"
+    
+    # DOWNLOAD PUBLIC BINARY
+    # Do NOT use 2>&1.
+    if ! curl -L --fail --progress-bar --connect-timeout 60 "${curl_auth[@]}" -o "$temp_file" "$download_url"; then
+      echo -e "${RED}Failed to download binary from ${download_url}${NC}" >&2
+      echo -e "${YELLOW}Possible causes: No release asset, network issue, or bad tag.${NC}" >&2
+      rm -f "$temp_file"
+      exit 1
+    fi
+  fi
+  
+  if [[ ! -s "$temp_file" ]]; then
+    echo -e "${RED}Downloaded file is empty${NC}" >&2
+    rm -f "$temp_file"
+    exit 1
+  fi
+
+  chmod +x "$temp_file"
+  
+  # ONLY this goes to stdout
+  echo "$temp_file"
+}
+
+# Function to check if binary exists and is executable
+binary_exists() {
+  [[ -f "$BINARY_PATH" ]] && [[ -x "$BINARY_PATH" ]]
+}
+
+extract_semver() {
+  local text="$1" line
+  while IFS= read -r line; do
+    if [[ "$line" =~ ([vV]?[0-9]+(\.[0-9]+){1,2}(-[0-9A-Za-z\.-]+)?) ]]; then
+      echo "${BASH_REMATCH[1]}"
+      return 0
+    fi
+  done <<< "$text"
+  return 1
+}
+
+# Function to get current binary version
+get_binary_version() {
+  if binary_exists; then
+    local output
+    output="$("$BINARY_PATH" --version 2>/dev/null || true)"
+    if extract_semver "$output"; then
+      return 0
+    fi
+    echo "unknown"
+  else
+    echo "not_installed"
+  fi
+}
+
+# Semver helpers from legacy installer (stable > rc; explicit patch tie-break)
+_parse_tag() {
+  local s="$1" core pre a b c rcnum
+  PAR_MAJ=0 PAR_MIN=0 PAR_PAT=0 PAR_STABLE=1 PAR_RCNUM=0
+  PAR_HASPATCH=0
+
+  [[ ${s:0:1} == "v" ]] && s="${s:1}"
+
+  core="${s%%-*}"
+  if [[ "$core" == "$s" ]]; then pre=""; else pre="${s#"$core"-}"; fi
+
+  IFS='.' read -r a b c <<<"$core"
+
+  [[ "$a" =~ ^[0-9]+$ ]] || return 1
+  [[ "$b" =~ ^[0-9]+$ ]] || return 1
+  if [[ -z "$c" ]]; then
+    PAR_HASPATCH=0
+    PAR_PAT=0
+  else
+    [[ "$c" =~ ^[0-9]+$ ]] || return 1
+    PAR_HASPATCH=1
+    PAR_PAT=$c
+  fi
+
+  PAR_MAJ=$a
+  PAR_MIN=$b
+
+  if [[ -n "$pre" ]]; then
+    if [[ "$pre" == rc ]]; then
+      PAR_STABLE=0; PAR_RCNUM=0
+    elif [[ "$pre" == rc.* ]]; then
+      rcnum="${pre#rc.}"
+      [[ "$rcnum" =~ ^[0-9]+$ ]] || return 1
+      PAR_STABLE=0; PAR_RCNUM=$rcnum
+    else
+      return 1
+    fi
+  fi
+  return 0
+}
+
+_better_than() {
+  local cMaj=$1 cMin=$2 cPat=$3 cSt=$4 cRc=$5 cHP=$6
+  local bMaj=$7 bMin=$8 bPat=$9 bSt=${10} bRc=${11} bHP=${12}
+
+  if   (( cMaj > bMaj )); then return 0
+  elif (( cMaj < bMaj )); then return 1; fi
+  if   (( cMin > bMin )); then return 0
+  elif (( cMin < bMin )); then return 1; fi
+  if   (( cPat > bPat )); then return 0
+  elif (( cPat < bPat )); then return 1; fi
+
+  if (( cSt != bSt )); then
+    (( cSt > bSt )) && return 0 || return 1
+  fi
+
+  if (( cSt == 0 )); then
+    if   (( cRc > bRc )); then return 0
+    elif (( cRc < bRc )); then return 1; fi
+  fi
+
+  if (( cHP != bHP )); then
+    (( cHP > bHP )) && return 0 || return 1
+  fi
+
+  return 1
+}
+
+version_is_newer() {
+  local candidate="$1" baseline="$2"
+  _parse_tag "$candidate" || return 1
+  local cMaj=$PAR_MAJ cMin=$PAR_MIN cPat=$PAR_PAT cSt=$PAR_STABLE cRc=$PAR_RCNUM cHP=$PAR_HASPATCH
+  _parse_tag "$baseline" || return 1
+  local bMaj=$PAR_MAJ bMin=$PAR_MIN bPat=$PAR_PAT bSt=$PAR_STABLE bRc=$PAR_RCNUM bHP=$PAR_HASPATCH
+  _better_than "$cMaj" "$cMin" "$cPat" "$cSt" "$cRc" "$cHP" "$bMaj" "$bMin" "$bPat" "$bSt" "$bRc" "$bHP"
+}
+
+
 
 # Call the function right away
 protecc_win_sysadmins
@@ -138,7 +505,8 @@ ensure_modern_bash() {
 }
 
 # Call the guard immediately
-ensure_modern_bash "$@"
+# We don't need modern bash
+# ensure_modern_bash "$@"
 
 
 # Sudo check
@@ -157,7 +525,8 @@ export BBX_REQUIRE_RELEASE=1
 BBX_HOME="${HOME}/.bbx"
 BBX_NEW_DIR="${BBX_HOME}/new"
 COMMAND_DIR=""
-REPO_URL="https://github.com/BrowserBox/BrowserBox"
+REPO_URL="https://github.com/BrowserBox/BrowserBox-source"
+owner_repo="${REPO_URL#https://github.com/}"
 BBX_SHARE="/usr/local/share/dosyago"
 if [[ ":$PATH:" == *":/usr/local/bin:"* ]] && $SUDO test -w /usr/local/bin; then
   COMMAND_DIR="/usr/local/bin"
@@ -166,6 +535,7 @@ elif $SUDO test -w /usr/bin; then
 else
   COMMAND_DIR="$HOME/.local/bin"
   mkdir -p "$COMMAND_DIR"
+  printf "${YELLOW}WARNING: BrowserBox command directory set to use local direcotry \""$COMMAND_DIR"\". This will likely produce errors, especially for updates. Ensure you can write to a global executable direcotry to install the binaries.${NC}\n" >&2
 fi
 BBX_BIN="${COMMAND_DIR}/bbx"
 
@@ -178,17 +548,70 @@ CERT_META_FILE="${BB_CONFIG_DIR}/tickets/cert.meta.env"
 DOCKER_CONTAINERS_FILE="$BB_CONFIG_DIR/docker_containers.json"
 [ ! -f "$DOCKER_CONTAINERS_FILE" ] && echo "{}" > "$DOCKER_CONTAINERS_FILE"
 
-# Version file paths
-VERSION_FILE="${BBX_SHARE}/BrowserBox/version.json"
-PREPARED_VERSION_FILE="${BBX_NEW_DIR}/BrowserBox/version.json"
+# Version tracking and update lock files
+# Note: VERSION_FILE and PREPARED_VERSION_FILE are deprecated in binary-based installation
+# Version info is now obtained from `browserbox --version` command via get_canonical_bbx_version()
 LOG_FILE="${BB_CONFIG_DIR}/update.log"
 PREPARING_FILE="${BBX_SHARE}/preparing"
 PREPARED_FILE="${BBX_SHARE}/prepared"
+
+# Legacy note: Chai static assets used to be synchronized from a local source tree
+# here. As part of the migration away from source-based installs, that logic now
+# lives solely inside the binary `browserbox --install/--full-install` flow.
 
 # Clean up any leftover temp installer scripts
 clean_temp_installers() {
   local TMPDIR="$HOME/.cache/myscript-installer"
   find "$TMPDIR" -type f -name 'installer-*' -exec rm -f {} \; 2>/dev/null
+}
+
+# Ensure installation_id exists with a UUID
+ensure_installation_id() {
+  local INSTALL_ID_DIR="${HOME}/.config/dosyago/bbpro"
+  local INSTALL_ID_FILE="${INSTALL_ID_DIR}/installation_id"
+  
+  # Create directory if it doesn't exist with owner-only permissions
+  if [ ! -d "$INSTALL_ID_DIR" ]; then
+    mkdir -p "$INSTALL_ID_DIR" 2>/dev/null || {
+      [[ -n "$BBX_DEBUG" ]] && echo "Warning: Could not create $INSTALL_ID_DIR (may be read-only)"
+      return 0
+    }
+    chmod 700 "$INSTALL_ID_DIR" 2>/dev/null || true
+  fi
+  
+  # Create installation_id file if it doesn't exist
+  if [ ! -f "$INSTALL_ID_FILE" ]; then
+    local uuid=""
+    
+    # Try various methods to generate a UUID
+    if command -v uuidgen >/dev/null 2>&1; then
+      uuid=$(uuidgen 2>/dev/null)
+    elif command -v browserbox >/dev/null 2>&1; then
+      uuid=$(browserbox uuid 2>/dev/null)
+    elif command -v python3 >/dev/null 2>&1; then
+      uuid=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
+    elif command -v python >/dev/null 2>&1; then
+      uuid=$(python -c "import uuid; print(uuid.uuid4())" 2>/dev/null)
+    elif command -v node >/dev/null 2>&1; then
+      uuid=$(node -e "console.log(require('crypto').randomUUID())" 2>/dev/null)
+    elif command -v openssl >/dev/null 2>&1; then
+      # Generate a UUID-like string using openssl
+      uuid=$(openssl rand -hex 16 | sed 's/\(........\)\(....\)\(....\)\(....\)\(............\)/\1-\2-\3-\4-\5/' 2>/dev/null)
+    fi
+    
+    if [ -n "$uuid" ]; then
+      echo "$uuid" > "$INSTALL_ID_FILE" 2>/dev/null || {
+        [[ -n "$BBX_DEBUG" ]] && echo "Warning: Could not write installation_id (may be read-only)"
+        return 0
+      }
+      chmod 600 "$INSTALL_ID_FILE" 2>/dev/null || true
+      [[ -n "$BBX_DEBUG" ]] && echo "Created installation_id: $uuid"
+    else
+      [[ -n "$BBX_DEBUG" ]] && echo "Warning: Could not generate UUID for installation_id"
+    fi
+  else
+    [[ -n "$BBX_DEBUG" ]] && echo "installation_id already exists"
+  fi
 }
 
 # Returns 0 if currently running from official location (not temp copy)
@@ -317,10 +740,19 @@ _better_than() {
 # releases for prerelease entries (or tags containing -rc). For "any" we
 # scan all non-draft releases and pick the best by semver (stable > rc).
 get_latest_release_tag_filtered() {
+  # Skip API call if BBX_NO_UPDATE is set; allow caller-provided tag to short-circuit.
+  if [[ -n "$BBX_NO_UPDATE" ]]; then
+    if [[ -n "${BBX_RELEASE_TAG:-}" ]]; then
+      echo "$BBX_RELEASE_TAG"
+      return 0
+    fi
+    echo "unknown"
+    return 1
+  fi
+
   local channel="${1:-stable}"
 
-  # Derive owner/repo from REPO_URL (e.g. https://github.com/BrowserBox/BrowserBox)
-  local owner_repo="${REPO_URL#https://github.com/}"
+  # Derive owner/repo from REPO_URL (e.g. https://github.com/BrowserBox/BrowserBox-source)
   local owner="${owner_repo%%/*}"
   local repo="${owner_repo#*/}"
   local api="https://api.github.com/repos/${owner}/${repo}"
@@ -340,6 +772,17 @@ get_latest_release_tag_filtered() {
   }
 
   if [[ "$channel" == "stable" ]]; then
+    local cache_file="${BB_CONFIG_DIR}/latest_release_${channel}.cache"
+    local now ts cached
+    now="$(date +%s)"
+    if [[ -f "$cache_file" ]]; then
+      read -r ts cached <"$cache_file" || true
+      if [[ -n "$ts" && -n "$cached" ]] && (( now - ts < 3600 )); then
+        echo "$cached"
+        return 0
+      fi
+    fi
+
     # GitHub's "latest" is the newest non-draft, non-prerelease release.
     local resp tag
     resp="$(curl "${CURL_OPTS[@]}" "$api/releases/latest" 2>/dev/null)" || true
@@ -348,6 +791,7 @@ get_latest_release_tag_filtered() {
     if [[ -n "$tag" && "$tag" != "null" && "$tag" != *-rc* ]]; then
       # Validate with our semver parser to be safe
       if _parse_tag "$tag" && (( PAR_STABLE == 1 )); then
+        printf '%s %s\n' "$now" "$tag" >"$cache_file" || true
         echo "$tag"
         return 0
       fi
@@ -488,9 +932,9 @@ tag_exists_remote() {
 }
 
 
-# Version
-BBX_VERSION="$(get_latest_repo_version)"
-[[ -z "$BBX_VERSION" ]] && BBX_VERSION="unknown"
+# Version - lazy load to avoid API call on every script run
+# Only fetch version when actually needed (not during BBX_NO_UPDATE mode)
+BBX_VERSION="unknown"
 branch="main" # change to main for dist
 if [[ "$branch" != "main" ]]; then
   export BBX_BRANCH="$branch"
@@ -498,6 +942,8 @@ fi
 banner_color=$CYAN
 
 # Helper: Get version info from version.json
+# DEPRECATED: This function is no longer used in binary-based installation.
+# Version info is now obtained via get_canonical_bbx_version() which calls `browserbox --version`
 get_version_info() {
   local file="$1"
   if [ -f "$file" ]; then
@@ -508,8 +954,42 @@ get_version_info() {
   fi
 }
 
-if ! test -d "${BBX_HOME}/BrowserBox/node_modules" || ! test -f "${BBX_HOME}/BrowserBox/.bbpro_install_dir"; then
-  if [[ "$1" != "install" ]] && [[ "$1" != "uninstall" ]] && [[ "$1" != "docker-"* ]] && [[ "$1" != "stop" ]] && [[ "$1" != "update-background" ]]; then
+# Helper: Get canonical BBX version from browserbox command or fallback
+get_canonical_bbx_version() {
+  local version=""
+  
+  # Try to get version from bbpro command if it exists
+  if command -v bbpro >/dev/null 2>&1; then
+    local bbpro_output
+    bbpro_output="$(browserbox --version 2>/dev/null || true)"
+    if [[ -n "$bbpro_output" ]]; then
+      # Extract version number using regex (supports any dot-separated numeric format: X.Y, X.Y.Z, etc.)
+      # Handles formats like "BrowserBox version: 15.1.2", "v15.1.2", or just "15.1.2"
+      version="$(echo "$bbpro_output" | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1)"
+    fi
+  fi
+  
+  # Fallback to BBX_VERSION if set and valid
+  # Note: BBX_VERSION can be "unknown", "unknown - cannot find any releases", or a valid version
+  # We explicitly exclude "unknown" and "unknown - ..." variants
+  if [[ -z "$version" ]] && [[ -n "${BBX_VERSION:-}" ]] && [[ "$BBX_VERSION" != "unknown" ]] && [[ "$BBX_VERSION" != "unknown - "* ]]; then
+    # Strip leading 'v' if present
+    version="${BBX_VERSION#v}"
+  fi
+  
+  # Final fallback
+  if [[ -z "$version" ]]; then
+    version="unknown"
+  fi
+  
+  echo "$version"
+}
+
+# Set the canonical version for use throughout the script
+VERSION="$(get_canonical_bbx_version)"
+
+if ! command -v bbpro &>/dev/null || ! test -d "${HOME}/.config/dosyago/bbpro"; then
+  if [[ "$1" != "install" ]] && [[ "$1" != "uninstall" ]] && [[ "$1" != "update-background" ]] && [[ "$1" != "--version" ]] && [[ "$1" != "-v" ]] && [[ "$1" != "--help" ]] && [[ "$1" != "-h" ]]; then
     banner
     printf "\n${RED}Run ${NC}${BOLD}bbx install${NC}${RED} first.${NC}\n"
     printf "\tYou may need to run bbx uninstall to remove any previous or broken installation.\n"
@@ -556,10 +1036,30 @@ save_config() {
   mkdir -p "$BB_CONFIG_DIR"
   chmod 700 "$BB_CONFIG_DIR"  # Restrict to owner only
 
+  # Grab any existing key from config (without sourcing / polluting env)
+  local existing_key=""
+  if [ -f "$CONFIG_FILE" ]; then
+    existing_key=$(grep -E '^LICENSE_KEY=' "$CONFIG_FILE" | head -n1 | sed -E 's/^LICENSE_KEY="?([^"]*)"?$/\1/')
+  fi
+
+  # Decide what key to write:
+  # - Prefer the current in-memory key if it's valid format
+  # - Else keep the existing on-disk key if it's valid format
+  # - Else write empty
+  local _LIC_TO_WRITE=""
+  if [[ -n "$LICENSE_KEY" && "$LICENSE_KEY" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
+    _LIC_TO_WRITE="$LICENSE_KEY"
+  elif [[ -n "$existing_key" && "$existing_key" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
+    _LIC_TO_WRITE="$existing_key"
+  else
+    _LIC_TO_WRITE=""
+  fi
+
   # Only save persistent, user-level data to the main config file.
   # Runtime data like PORT, TOKEN, and HOSTNAME now live in test.env.
   cat > "$CONFIG_FILE" <<EOF
 EMAIL="${EMAIL:-}"
+LICENSE_KEY="${_LIC_TO_WRITE}"
 EOF
   chmod 600 "$CONFIG_FILE"
 }
@@ -573,7 +1073,50 @@ ensure_nvm() {
     fi
 }
 
-# License validation removed - no longer needed
+# Validate product key with server, loop until valid
+validate_license_key() {
+  local force_prompt="${1:-false}"  # Only force prompt if explicitly requested
+  load_config
+
+  # If no key exists or we're forcing a new one, prompt
+  if [ -z "$LICENSE_KEY" ] || [ "$force_prompt" = "true" ]; then
+    while true; do
+      read -r -p "Enter License Key (e.g., U0TZ-GNMD-S889-RETG-YMCH-EAMR-ZOKU-2KRO): " LICENSE_KEY
+      if [ -z "$LICENSE_KEY" ]; then
+        printf "${RED}ERROR: License key cannot be empty. Try again.${NC}\n"
+        continue
+      fi
+      if [[ "$LICENSE_KEY" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
+        export LICENSE_KEY
+        certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify --force-license --no-reservation 2>&1")"
+        if [[ "$?" -eq 0 ]]; then
+          printf "${GREEN}License key validated with server.${NC}\n"
+          save_config
+          return 0
+        else
+          printf "${RED}ERROR: License key invalid or server unreachable. Try again.${NC}\n"
+          echo "Certification output: $certout"
+          LICENSE_KEY=""
+        fi
+      else
+        printf "${RED}ERROR: Invalid format. Must be 8 groups of 4 uppercase A-Z0-9 characters, separated by hyphens.${NC}\n"
+        LICENSE_KEY=""
+      fi
+    done
+  else
+    # Validate existing key
+    export LICENSE_KEY
+    certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify --force-license --no-reservation 2>&1")"
+    if [[ "$?" -eq 0 ]]; then
+      printf "${GREEN}Existing product key is valid.${NC}\n"
+      return 0
+    else
+      printf "${RED}Current product key ($LICENSE_KEY) is invalid. Run 'bbx certify' to update it.${NC}\n"
+      echo "Certification output: $certout"
+      return 1
+    fi
+  fi
+}
 
 # Box drawing helper function
 draw_box() {
@@ -625,12 +1168,25 @@ get_system_hostname() {
     echo "${host:-unknown}"
 }
 
+# Wrapper for getent-like functionality without installing getent
+getent_hosts() {
+  local hostname="$1"
+  # If on macOS, etc, manually search /etc/hosts
+  if ! command -v getent &>/dev/null; then
+    grep -E "^\s*([^#]+)\s+$hostname" /etc/hosts || echo ""
+  else
+    getent hosts "$hostname" || echo ""
+  fi
+}
+
 # Check if hostname is local
 is_local_hostname() {
   local hostname="$1"
   local resolved_ips ip
   local public_dns_servers=("8.8.8.8" "1.1.1.1" "208.67.222.222")
   local has_valid_result=0
+
+  # Try DNS resolution
   for dns in "${public_dns_servers[@]}"; do
     resolved_ips=$(command -v dig >/dev/null 2>&1 && dig +short "$hostname" A @"$dns")
     if [[ "$?" -eq 0 ]] && [[ -n "$resolved_ips" ]]; then
@@ -644,17 +1200,18 @@ is_local_hostname() {
       done <<< "$resolved_ips"
     fi
   done
+
   # If all results were private or none resolved, treat as local
   if [[ "$has_valid_result" -eq 1 ]]; then
     return 0 # All IPs private => local
   fi
+
   # Fallback: check /etc/hosts (or similar)
-  if command -v getent &>/dev/null; then
-    ip=$(getent hosts "$hostname" | awk '{print $1}' | head -n1)
-    if [[ "$ip" =~ ^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|::1$|fe80:) ]]; then
-      return 0 # Local
-    fi
+  ip=$(getent_hosts "$hostname" | awk '{print $1}' | head -n1)
+  if [[ "$ip" =~ ^(127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|::1$|fe80:) ]]; then
+    return 0 # Local
   fi
+
   return 0 # Unresolvable => local
 }
 
@@ -834,82 +1391,258 @@ ensure_setup_tor() {
     fi
     if ! $tor_is_running || ! command -v tor >/dev/null 2>&1; then
         printf "${YELLOW}Setting up Tor for user $user...${NC}\n"
-        $SUDO bash -c "PATH=/usr/local/bin:\$PATH setup_tor '$user'" || { printf "${RED}Failed to setup Tor for $user${NC}\n"; exit 1; }
+        $SUDO bash -c "PATH=/opt/homebrew/bin:/usr/local/bin:\$PATH setup_tor '$user'" || { printf "${RED}Failed to setup Tor for $user${NC}\n"; exit 1; }
     fi
 }
 
-install() {
+# Ensure cloudflared is installed
+ensure_cloudflared() {
+    if command -v cloudflared >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    printf "${YELLOW}cloudflared not found. Installing...${NC}\n"
+    
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        # macOS: use Homebrew
+        if command -v brew >/dev/null 2>&1; then
+            brew install cloudflared || {
+                printf "${RED}Failed to install cloudflared via Homebrew${NC}\n"
+                return 1
+            }
+        else
+            printf "${RED}Homebrew not found. Please install cloudflared manually from:${NC}\n"
+            printf "https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/\n"
+            return 1
+        fi
+    elif [[ -f /etc/debian_version ]]; then
+        # Debian/Ubuntu: try apt, fallback to binary
+        if $SUDO apt-get install -y cloudflared 2>/dev/null; then
+            printf "${GREEN}Installed cloudflared via apt${NC}\n"
+        else
+            # Fallback to binary download
+            local arch="amd64"
+            if [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]]; then
+                arch="arm64"
+            fi
+            curl -L --output /tmp/cloudflared.deb "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}.deb" || {
+                printf "${RED}Failed to download cloudflared${NC}\n"
+                return 1
+            }
+            $SUDO dpkg -i /tmp/cloudflared.deb || {
+                printf "${RED}Failed to install cloudflared${NC}\n"
+                rm -f /tmp/cloudflared.deb
+                return 1
+            }
+            rm -f /tmp/cloudflared.deb
+        fi
+    else
+        # Other Linux: download static binary
+        local arch="amd64"
+        if [[ "$(uname -m)" == "aarch64" || "$(uname -m)" == "arm64" ]]; then
+            arch="arm64"
+        fi
+        curl -L --output /tmp/cloudflared "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}" || {
+            printf "${RED}Failed to download cloudflared${NC}\n"
+            return 1
+        }
+        $SUDO install -m 755 /tmp/cloudflared /usr/local/bin/cloudflared || {
+            printf "${RED}Failed to install cloudflared to /usr/local/bin${NC}\n"
+            rm -f /tmp/cloudflared
+            return 1
+        }
+        rm -f /tmp/cloudflared
+    fi
+    
+    # Validate installation
+    if ! command -v cloudflared >/dev/null 2>&1; then
+        printf "${RED}cloudflared installation failed validation${NC}\n"
+        return 1
+    fi
+    
+    printf "${GREEN}cloudflared installed successfully${NC}\n"
+    return 0
+}
+
+install_bbx() {
+    has_browser_dep() {
+        # Respect explicit CHROME_PATH if set and executable
+        if [[ -n "${CHROME_PATH:-}" && -x "${CHROME_PATH}" ]]; then
+            return 0
+        fi
+        local candidates=(
+            google-chrome-stable
+            google-chrome
+            chromium-browser
+            chromium
+            /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome
+        )
+        for c in "${candidates[@]}"; do
+            if command -v "$c" >/dev/null 2>&1; then
+                return 0
+            fi
+        done
+        return 1
+    }
+
+    has_cert_dep() {
+        command -v mkcert >/dev/null 2>&1 && return 0
+        command -v certbot >/dev/null 2>&1 && return 0
+        return 1
+    }
+
+    needs_full_install() {
+        # If browserbox binary missing, or core deps missing, we must do full install.
+        if ! command -v browserbox >/dev/null 2>&1; then
+            return 0
+        fi
+        if ! has_browser_dep; then
+            return 0
+        fi
+        if ! has_cert_dep; then
+            return 0
+        fi
+        return 1
+    }
+
+    # 1. Loop Protection
+    if [[ -n "$BBX_INSTALL_GUARD" ]]; then
+        return 0
+    fi
+    export BBX_INSTALL_GUARD="true"
+
+    # 2. Path Detection
+    local is_update=false
+    if needs_full_install; then
+        is_update=false
+    else
+        is_update=true
+    fi
+
     banner
     check_agreement
     pre_install || return 0
     load_config
     ensure_deps
-    printf "${GREEN}Installing BrowserBox CLI (bbx)...${NC}\n"
-    mkdir -p "$BBX_HOME/BrowserBox" || { printf "${RED}Failed to create $BBX_HOME/BrowserBox${NC}\n"; exit 1; }
-    printf "${YELLOW}Fetching BrowserBox repository...${NC}\n"
-    $SUDO rm -rf $BBX_HOME/BrowserBox*
-    curl --connect-timeout 8 -sL "$REPO_URL/archive/refs/heads/${branch}.zip" -o "$BBX_HOME/BrowserBox.zip" || { printf "${RED}Failed to download BrowserBox repo${NC}\n"; exit 1; }
-    unzip -o -q "$BBX_HOME/BrowserBox.zip" -d "$BBX_HOME/BrowserBox-zip" || { printf "${RED}Failed to extract BrowserBox repo${NC}\n"; exit 1; }
-    mv $BBX_HOME/BrowserBox-zip/BrowserBox-${branch} $BBX_HOME/BrowserBox 
-    $SUDO rm -rf $BBX_HOME/BrowserBox-zip
-    $SUDO rm -f $BBX_HOME/BrowserBox.zip
-    chmod +x "$BBX_HOME/BrowserBox/deploy-scripts/global_install.sh" || { printf "${RED}Failed to make global_install.sh executable${NC}\n"; exit 1; }
-    local default_hostname=$(get_system_hostname)
+    ensure_installation_id
 
+  printf "${GREEN}Installing BrowserBox CLI (bbx)...${NC}\n"
+
+  local platform
+  platform=$(detect_platform)
+  local tag="${BBX_RELEASE_TAG:-}"
+  if [[ -z "$tag" ]]; then
+    if [[ -n "${BBX_NO_UPDATE:-}" ]]; then
+      echo -e "${RED}BBX_NO_UPDATE is set; provide BBX_RELEASE_TAG to install without hitting release APIs.${NC}" >&2
+      return 1
+    fi
+    tag=$(get_latest_release "$PUBLIC_REPO")
+  fi
+
+    # 3. Idempotency & Download
+    local current_ver
+    current_ver=$(get_binary_version)
+    local norm_tag="${tag#v}"
+    local norm_curr="${current_ver#v}"
+
+    local exe_to_run=""
+
+    if [[ "$norm_curr" == "$norm_tag" ]] && binary_exists; then
+         printf "${GREEN}BrowserBox binary $tag is already installed.${NC}\n"
+         exe_to_run="$BINARY_PATH"
+    else
+         exe_to_run=$(download_binary "$platform" "$tag")
+         exit_status=$?
+
+         # Sanitize: output should be a single line path
+         exe_to_run=$(echo "$exe_to_run" | tail -n1 | tr -d '[:space:]')
+
+         if [[ $exit_status -ne 0 ]] || [[ -z "$exe_to_run" ]] || [[ ! -f "$exe_to_run" ]]; then
+             printf "${RED}Download failed.${NC}\n"
+             if [[ -n "$BBX_DEBUG" ]]; then echo "Debug: Download output was: $exe_to_run" >&2; fi
+             exit 1
+         fi
+    fi
+
+    # 4. Config inputs
+    local default_hostname=$(get_system_hostname)
     if [ -z "$BBX_HOSTNAME" ]; then
-      if [[ -n "$BBX_TEST_AGREEMENT" ]]; then 
+      if [[ -n "$BBX_TEST_AGREEMENT" ]]; then
         BBX_HOSTNAME="localhost"
       else
         read -r -p "Enter hostname (default: $default_hostname): " BBX_HOSTNAME
       fi
     fi
     BBX_HOSTNAME="${BBX_HOSTNAME:-$default_hostname}"
-    STRICTNESS="mandatory";
+
+    local strictness="mandatory"
     if is_local_hostname "$BBX_HOSTNAME"; then
-        STRICTNESS="optional"
+        strictness="optional"
         ensure_hosts_entry "$BBX_HOSTNAME"
     fi
+
     if [ -z "$EMAIL" ]; then
-      if [[ -n "$BBX_TEST_AGREEMENT" ]]; then 
+      if [[ -n "$BBX_TEST_AGREEMENT" ]]; then
         EMAIL=""
       else
-        read -r -p "Enter your email for Let's Encrypt ($STRICTNESS for $BBX_HOSTNAME): " EMAIL
+        read -r -p "Enter your email for Let's Encrypt ($strictness for $BBX_HOSTNAME): " EMAIL
       fi
-      if [[ "$STRICTNESS" == "mandatory" ]] && [[ -z "$EMAIL" ]]; then
-        echo "An email is required for a public DNS hostname in order to provision the TLS certificate from Let's Encrypt." >&2
-        echo "Exiting..." >&2
+      if [[ "$strictness" == "mandatory" ]] && [[ -z "$EMAIL" ]]; then
+        echo "An email is required for a public DNS hostname." >&2
         exit 1
       fi
     fi
-    
-    if [ -t 0 ] && [[ -z "$BBX_TEST_AGREEMENT" ]]; then
-        printf "${YELLOW}Running BrowserBox installer interactively...${NC}\n"
-        cd "$BBX_HOME/BrowserBox" && ./deploy-scripts/global_install.sh "$BBX_HOSTNAME" "$EMAIL"
+
+    # 5. Execute
+    if [[ "$is_update" == "true" ]]; then
+        printf "${YELLOW}BrowserBox detected in PATH. Running update setup (--install)...${NC}\n"
+        "$exe_to_run" --install
     else
-        printf "${YELLOW}Running BrowserBox installer non-interactively...${NC}\n"
-        cd "$BBX_HOME/BrowserBox" && (yes | ./deploy-scripts/global_install.sh "$BBX_HOSTNAME" "$EMAIL")
+        printf "${YELLOW}BrowserBox not found in PATH. Running full setup (--full-install)...${NC}\n"
+        if [ -t 0 ] && [[ -z "$BBX_TEST_AGREEMENT" ]]; then
+            yes yes 2>/dev/null | "$exe_to_run" --full-install "$BBX_HOSTNAME" "$EMAIL"
+        else
+            # FIX: Silence 'yes' stderr to prevent "Broken pipe" logs
+            yes yes 2>/dev/null | "$exe_to_run" --full-install "$BBX_HOSTNAME" "$EMAIL"
+        fi
     fi
-    [ $? -eq 0 ] || { printf "${RED}Installation failed${NC}\n"; exit 1; }
-    printf "${YELLOW}Updating npm and pm2...${NC}\n"
-    ensure_nvm
-    npm i -g npm@latest
-    npm i -g pm2@latest
-    timeout 5s pm2 update
-    printf "${YELLOW}Installing bbx command globally...${NC}\n"
-    $SUDO curl --connect-timeout 7 --max-time 15 -sSL "$REPO_URL/raw/${branch}/bbx.sh" -o "$BBX_BIN" || { printf "${RED}Failed to install bbx${NC}\n"; $SUDO rm -f "$BBX_BIN"; exit 1; }
-    $SUDO chmod +x "$BBX_BIN"
+    local install_exit=$?
+
+    # Cleanup temp file
+    if [[ "$exe_to_run" != "$BINARY_PATH" && -f "$exe_to_run" ]]; then
+        rm -f "$exe_to_run"
+    fi
+
+    [ $install_exit -eq 0 ] || { printf "${RED}Installation failed${NC}\n"; exit 1; }
+
+    if [[ -z "$BBX_TEST_AGREEMENT" ]]; then
+      printf "${YELLOW}Installing bbx command globally...${NC}\n"
+      $SUDO curl --connect-timeout 7 --max-time 15 -sSL "$REPO_URL/raw/${branch}/bbx.sh" -o "$BBX_BIN" || { printf "${RED}Failed to install bbx${NC}\n"; $SUDO rm -f "$BBX_BIN"; exit 1; }
+      $SUDO chmod +x "$BBX_BIN"
+    fi
+
     save_config
-    printf "${GREEN}bbx $BBX_VERSION installed successfully! Run 'bbx --help' for usage.${NC}\n"
+
+    # FIX: Re-read the version from the newly installed binary for the success message
+    local final_ver
+    if command -v bbpro >/dev/null 2>&1; then
+       final_ver=$(browserbox --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1)
+    fi
+    # Fallback to tag if binary check fails
+    final_ver="${final_ver:-$tag}"
+
+    printf "${GREEN}bbx $final_ver installed successfully! Run 'bbx --help' for usage.${NC}\n"
 }
 
 setup() {
   load_config
   ensure_deps
+  ensure_installation_id
 
   # Initialize local variables from config or defaults
   local port="${PORT:-$(find_free_port_block)}"
   local hostname="${BBX_HOSTNAME:-$(get_system_hostname)}"
-  local token="${TOKEN}"
+  local token=""
   local zeta_mode=""
   local backend_scheme="" # Will be 'http' or 'https'
 
@@ -979,21 +1712,36 @@ setup() {
   local setup_hostname="$hostname"
   local setup_token="${token:-$(openssl rand -hex 16)}"
 
+  if [[ -z "$setup_token" ]]; then
+    setup_token="$(openssl rand -hex 16)"
+  fi
+
   printf "${YELLOW}Setting up BrowserBox on $setup_hostname:$setup_port...${NC}\n"
   if [[ -n "$zeta_mode" ]] && [[ "$setup_hostname" == "localhost" ]]; then
     printf "${YELLOW}localhost is incompatible with zeta mode due to widespread conventions against *.localhost subdomains. Changing hostname to bbx.test\n"
     setup_hostname="bbx.test"
   fi
+  if [[ "$setup_hostname" == *".local" ]] && [[ "$(uname -s)" == "Darwin" ]]; then
+    printf "${YELLOW}On macOS .local domains are incompatible as they are reserved for Apple's Bonjour mDNS service.\n"
+    read -r -p "Enter a new hostname: " new_hostname
+    if [[ "$new_hostname" == *".local" ]]; then 
+      new_hostname="${new_hostname}.test"
+    fi
+    setup_hostname="${new_hostname}"
+  fi
   if ! is_local_hostname "$setup_hostname"; then
     printf "${BLUE}DNS Note:${NC} Ensure an A/AAAA record points from $setup_hostname to this machine's IP.\n"
-    curl --connect-timeout 8 -sL "$REPO_URL/raw/${branch}/deploy-scripts/wait_for_hostname.sh" -o "$BBX_HOME/BrowserBox/deploy-scripts/wait_for_hostname.sh" || { printf "${RED}Failed to download wait_for_hostname.sh${NC}\n"; exit 1; }
-    chmod +x "$BBX_HOME/BrowserBox/deploy-scripts/wait_for_hostname.sh"
-    "$BBX_HOME/BrowserBox/deploy-scripts/wait_for_hostname.sh" "$setup_hostname" || { printf "${RED}Hostname $setup_hostname not resolving${NC}\n"; exit 1; }
+    wait_for_hostname "$setup_hostname" || { printf "${RED}Hostname $setup_hostname not resolving${NC}\n"; exit 1; }
   else
     ensure_hosts_entry "$setup_hostname"
   fi
   
-  EMAIL="${EMAIL}" BB_USER_EMAIL="${EMAIL}" "$BBX_HOME/BrowserBox/deploy-scripts/tls" "$setup_hostname" || { printf "${RED}Hostname $setup_hostname certificate not acquired${NC}\n"; exit 1; }
+  EMAIL="${EMAIL}" BB_USER_EMAIL="${EMAIL}" tls "$setup_hostname" || { printf "${RED}Hostname $setup_hostname certificate not acquired${NC}\n"; exit 1; }
+
+  # Ensure we have a valid product key
+  if ! validate_license_key; then
+    printf "${RED}License key invalid or missing. Run 'bbx activate' or go to dosaygo.com to get a valid key.${NC}\n"
+  fi
 
   pkill ncat &>/dev/null;
   for i in {-2..2}; do
@@ -1011,7 +1759,7 @@ setup() {
   fi
 
   # Call setup_bbpro, which writes to test.env
-  setup_bbpro "${setup_args[@]}" || { printf "${RED}Setup failed${NC}\n"; exit 1; }
+  LICENSE_KEY="${LICENSE_KEY}" setup_bbpro "${setup_args[@]}" || { printf "${RED}Setup failed${NC}\n"; exit 1; }
 
   # After setup_bbpro succeeds, reload config to get the new runtime values
   load_config
@@ -1023,9 +1771,15 @@ setup() {
   fi
 }
 
+restart() {
+  stop;
+  run;
+}
+
 run() {
   banner
   load_config
+  ensure_installation_id
 
   # Ensure setup has been run
   if [ -z "$PORT" ] || [ -z "$BBX_HOSTNAME" ] || [[ ! -f "${BB_CONFIG_DIR}/test.env" ]] ; then
@@ -1104,12 +1858,27 @@ run() {
 
   if ! is_local_hostname "$hostname"; then
     printf "${BLUE}DNS Note:${NC} Ensure an A/AAAA record points from $hostname to this machine's IP.\n"
-    "$BBX_HOME/BrowserBox/deploy-scripts/wait_for_hostname.sh" "$hostname" || { printf "${RED}Hostname $hostname not resolving${NC}\n"; exit 1; }
+    wait_for_hostname "$hostname" || { printf "${RED}Hostname $hostname not resolving${NC}\n"; exit 1; }
   else
     ensure_hosts_entry "$hostname"
   fi
 
-  # License validation removed
+  # Validate existing product key
+  export LICENSE_KEY;
+  certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify 2>&1")"
+  if [[ "$?" -ne 0 ]]; then
+    printf "${RED}License key invalid or missing. Run 'bbx activate' or go to dosaygo.com to get a valid key.${NC}\n"
+    echo "Certification output: $certout"
+    exit 1
+  else
+    printf "${GREEN}Certification complete.${NC}\n"
+    if [[ -f "$CERT_META_FILE" ]]; then
+      # shellcheck disable=SC1090
+      source "$CERT_META_FILE"
+      export BBX_RESERVATION_CODE BBX_RESERVED_SEAT_ID BBX_TICKET_ID BBX_TICKET_SLOT
+    fi
+  fi
+
   export HOST_PER_SERVICE BBX_HTTP_ONLY;
   # Pass any extra args to bbpro
   run_quietly bbpro "${run_args[@]}" || { printf "${RED}Failed to start${NC}\n"; exit 1; }
@@ -1171,14 +1940,26 @@ tor_run() {
   printf "${YELLOW}Starting BrowserBox with ${NC}${PURPLE}Tor${NC}${YELLOW}...${NC}\n"
   ensure_setup_tor "$(whoami)"
 
-  # Determine Tor group and cookie file dynamically
+  # Find Tor cookie file dynamically across platforms
+  COOKIE_AUTH_FILE=$(find_tor_cookie)
+  if [[ -z "$COOKIE_AUTH_FILE" ]]; then
+    # Fallback to expected locations if not found
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      TORDIR="$(brew --prefix)/var/lib/tor"
+    else
+      TORDIR="/var/lib/tor"
+    fi
+    COOKIE_AUTH_FILE="$TORDIR/control_auth_cookie"
+    printf "${YELLOW}Warning: Tor cookie file not found in common locations. Expected at: $COOKIE_AUTH_FILE${NC}\n"
+  else
+    TORDIR="$(dirname "$COOKIE_AUTH_FILE")"
+    printf "${GREEN}Found Tor cookie at: $COOKIE_AUTH_FILE${NC}\n"
+  fi
+
+  # Determine Tor group dynamically
   if [[ "$(uname -s)" == "Darwin" ]]; then
       TOR_GROUP="admin"  # Homebrew default
-      TORDIR="$(brew --prefix)/var/lib/tor"
-      COOKIE_AUTH_FILE="$TORDIR/control_auth_cookie"
   else
-      TORDIR="/var/lib/tor"
-      COOKIE_AUTH_FILE="$TORDIR/control_auth_cookie"
       TOR_GROUP=$(ls -ld "$TORDIR" | awk '{print $4}' 2>/dev/null)
       if [[ -z "$TOR_GROUP" || "$TOR_GROUP" == "root" ]]; then
         TOR_GROUP=$(getent group | grep -E 'tor|debian-tor|toranon' | cut -d: -f1 | head -n1)
@@ -1203,14 +1984,20 @@ tor_run() {
       setup_cmd="$setup_cmd --ontor"
   fi
   if ! $onion && ! is_local_hostname "$BBX_HOSTNAME"; then
-      "$BBX_HOME/BrowserBox/deploy-scripts/wait_for_hostname.sh" "$BBX_HOSTNAME" || { printf "${RED}Hostname $BBX_HOSTNAME not resolving${NC}\n"; exit 1; }
+      wait_for_hostname "$BBX_HOSTNAME" || { printf "${RED}Hostname $BBX_HOSTNAME not resolving${NC}\n"; exit 1; }
   elif ! $onion; then
       ensure_hosts_entry "$BBX_HOSTNAME"
   fi
-  $setup_cmd || { printf "${RED}Setup failed${NC}\n"; exit 1; }
+  LICENSE_KEY="${LICENSE_KEY}" $setup_cmd || { printf "${RED}Setup failed${NC}\n"; exit 1; }
   source "${BB_CONFIG_DIR}/test.env" && PORT="${APP_PORT:-$PORT}" && TOKEN="${LOGIN_TOKEN:-$TOKEN}" || { printf "${YELLOW}Warning: test.env not found${NC}\n"; }
-  # License validation removed
-  {
+  # Validate existing product key
+  export LICENSE_KEY;
+  certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify 2>&1")"
+  if [[ "$?" -ne 0 ]]; then
+    printf "${RED}License key invalid or missing. Run 'bbx activate' or go to dosaygo.com to get a valid key.${NC}\n"
+    echo "Certification output: $certout"
+    exit 1
+  else
     printf "${GREEN}Certification complete.${NC}\n"
     if [[ -f "$CERT_META_FILE" ]]; then
       # shellcheck disable=SC1090
@@ -1442,7 +2229,7 @@ export tunnel_host="$tunnel_hostname"
 export remote_user_at_host="$user_at_host"
 export remote_port="$p_main"
 export remote_zt_network_id="$zt_network_id"
-# License key export removed
+export bbx_license_key="$LICENSE_KEY"
 
 # ANSI color codes
 RED='\033[0;31m'
@@ -1551,7 +2338,7 @@ ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \\
     -L "\$((remote_port - 1)):127.0.0.1:\$((remote_port - 1))" \\
     -L "\$((remote_port + 1)):127.0.0.1:\$((remote_port + 1))" \\
     "\$remote_user_at_host" \\
-    "bbx run; sleep 30000" &
+    "export LICENSE_KEY='\$bbx_license_key' ; bbx run; sleep 30000" &
 
 tunnel_pid=\$!
 echo "SSH tunnel process started with PID: \$tunnel_pid"
@@ -1592,6 +2379,144 @@ EOF
     wait $!
 }
 
+cf_run() {
+  banner
+  load_config
+  ensure_deps
+  ensure_cloudflared || { printf "${RED}Failed to install cloudflared${NC}\n"; exit 1; }
+
+  printf "${CYAN}Starting BrowserBox with Cloudflare Quick Tunnel...${NC}\n"
+
+  # Parse optional --port|-p argument
+  local port=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --port|-p)
+        if [ -z "$2" ]; then
+          printf "${RED}Error: Option $1 requires an argument${NC}\n"
+          printf "Usage: bbx cf-run [--port|-p <port>]\n"
+          exit 1
+        fi
+        port="$2"
+        shift 2
+        ;;
+      *)
+        printf "${RED}Unknown option: $1${NC}\n"
+        printf "Usage: bbx cf-run [--port|-p <port>]\n"
+        exit 1
+        ;;
+    esac
+  done
+
+  # Default to find_free_port_block or loaded PORT if no port specified
+  if [ -z "$port" ]; then
+    port="${PORT:-$(find_free_port_block)}"
+  fi
+
+  # Ensure a fresh token
+  [ -n "$TOKEN" ] || TOKEN=$(openssl rand -hex 16)
+
+  # Test the 5-port block and CDP port
+  printf "${YELLOW}Testing port block ${port}...${NC}\n"
+  for i in {-2..2}; do
+    test_port_access $((port+i)) || { 
+      printf "${RED}Port $((port+i)) is not accessible. Quit software using these ports, or adjust firewall for ports $((port-2))-$((port+2))/tcp${NC}\n"
+      exit 1
+    }
+  done
+  test_port_access $((port-3000)) || { 
+    printf "${RED}CDP port $((port-3000)) blocked${NC}\n"
+    exit 1
+  }
+
+  # Run minimal setup using setup_bbpro with HTTP backend
+  printf "${YELLOW}Setting up BrowserBox on port ${port} with HTTP backend...${NC}\n"
+  LICENSE_KEY="${LICENSE_KEY}" setup_bbpro --port "$port" --token "$TOKEN" --backend http || { 
+    printf "${RED}Setup failed${NC}\n"
+    exit 1
+  }
+
+  # Reload config to get PORT and TOKEN from test.env
+  source "${BB_CONFIG_DIR}/test.env" && PORT="${APP_PORT:-$port}" && TOKEN="${LOGIN_TOKEN:-$TOKEN}" || {
+    printf "${YELLOW}Warning: test.env not found${NC}\n"
+  }
+
+  # Validate LICENSE_KEY via bbcertify
+  export LICENSE_KEY
+  certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify 2>&1")"
+  if [[ "$?" -ne 0 ]]; then
+    printf "${RED}License key invalid or missing. Run 'bbx activate' or go to dosaygo.com to get a valid key.${NC}\n"
+    echo "Certification output: $certout"
+    exit 1
+  else
+    printf "${GREEN}Certification complete.${NC}\n"
+    if [[ -f "$CERT_META_FILE" ]]; then
+      # shellcheck disable=SC1090
+      source "$CERT_META_FILE"
+      export BBX_RESERVATION_CODE BBX_RESERVED_SEAT_ID BBX_TICKET_ID BBX_TICKET_SLOT
+    fi
+  fi
+
+  # Start BrowserBox via run_quietly bbpro
+  printf "${YELLOW}Starting BrowserBox on 127.0.0.1:${PORT}...${NC}\n"
+  run_quietly bbpro || { printf "${RED}Failed to start BrowserBox${NC}\n"; exit 1; }
+
+  # Reload config to capture final token
+  load_config
+
+  # Start cloudflared in background with logs to BB_CONFIG_DIR
+  local cf_log_file="${BB_CONFIG_DIR}/cloudflared.log"
+  printf "${YELLOW}Starting Cloudflare tunnel to http://127.0.0.1:${PORT}...${NC}\n"
+  cloudflared tunnel --no-autoupdate --url "http://127.0.0.1:${PORT}" > "$cf_log_file" 2>&1 &
+  local cf_pid=$!
+
+  # Cleanup function for cf_run - defined before trap to ensure proper execution order
+  cleanup_cf_run() {
+    printf "\n${YELLOW}Stopping BrowserBox and Cloudflare tunnel...${NC}\n"
+    kill $cf_pid 2>/dev/null || true
+    run_quietly stop_bbpro || true
+    printf "${GREEN}Cleanup complete.${NC}\n"
+  }
+  # Set trap for cleanup immediately after function definition
+  trap cleanup_cf_run EXIT INT TERM
+
+  # Extract https://*.trycloudflare.com from log (poll up to ~60 seconds)
+  local attempts=0
+  local max_attempts=120
+  local tunnel_url=""
+  
+  while [ $attempts -lt $max_attempts ]; do
+    if [ -f "$cf_log_file" ]; then
+      # Note: trycloudflare.com is the domain used by Cloudflare Quick Tunnels (no account required)
+      tunnel_url=$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$cf_log_file" | head -1)
+      if [ -n "$tunnel_url" ]; then
+        break
+      fi
+    fi
+    sleep 0.5
+    attempts=$((attempts + 1))
+  done
+
+  if [ -z "$tunnel_url" ]; then
+    printf "${RED}Failed to extract tunnel URL from cloudflared log${NC}\n"
+    printf "${YELLOW}Last 20 lines of cloudflared log:${NC}\n"
+    tail -n 20 "$cf_log_file"
+    exit 1
+  fi
+
+  printf "${GREEN}Cloudflare tunnel established!${NC}\n"
+  
+  # Build login link and save to login.link
+  local login_link="${tunnel_url}/login?token=${TOKEN}"
+  echo "$login_link" > "${BB_CONFIG_DIR}/login.link"
+  
+  draw_box "Login Link: ${login_link}"
+  
+  printf "\n${CYAN}Tunnel is active. Press Ctrl+C to stop.${NC}\n\n"
+
+  # Wait on the cloudflared PID
+  wait $cf_pid
+}
 
 docker_run() {
   banner
@@ -1686,6 +2611,11 @@ EOF
     command -v docker >/dev/null 2>&1 || { printf "${RED}Docker installation failed${NC}\n"; exit 1; }
   fi
 
+  # Validate existing product key
+  if ! validate_license_key; then
+    printf "${RED}License key invalid. Run 'bbx certify' to update it.${NC}\n"
+    exit 1
+  fi
 
   local run_docker_script="$BBX_HOME/BrowserBox/deploy-scripts/run_docker.sh"
   if [ ! -f "$run_docker_script" ]; then
@@ -1713,7 +2643,7 @@ EOF
   printf "${YELLOW}Running run_docker.sh...${NC}\n"
 
   export BBX_DEBUG BBX_BRANCH
-  local docker_output="$(bash -c "env BBX_HOME='$BBX_HOME' drun_file='$drun_file' port='$port' hostname='$hostname' email='$email' bash" << 'EOF'
+  local docker_output="$(bash -c "env LICENSE_KEY='$LICENSE_KEY' BBX_HOME='$BBX_HOME' drun_file='$drun_file' port='$port' hostname='$hostname' email='$email' bash" << 'EOF'
   if [[ -n "$BBX_DEBUG" ]]; then
     set -x
   fi
@@ -1792,7 +2722,7 @@ docker_stop() {
   $SUDO docker exec "$container_id" bash -c "stop_bbpro" || {
     printf "${RED}Warning: Failed to run stop_bbpro in container${NC}\n"
   }
-  # License release removed
+  printf "${YELLOW}Waiting 1 second for license release...${NC}\n"
   sleep 1
 
   docker stop --timeout 3 "$container_id" &>/dev/null || docker stop --time 3 "$container_id" &>/dev/null ||
@@ -1869,6 +2799,14 @@ pre_install() {
 
         # Prompt for a non-root user to run the install as
         if [ -z "$BBX_INSTALL_USER" ]; then
+          # Check if we're in non-interactive mode (CI/CD)
+          if [[ -n "$BBX_TEST_AGREEMENT" ]] || [ ! -t 0 ]; then
+            printf "${RED}ERROR: Running as root in non-interactive mode requires BBX_INSTALL_USER environment variable${NC}\n"
+            printf "${BLUE}Please set BBX_INSTALL_USER to a non-root username (e.g., export BBX_INSTALL_USER=bbxuser)${NC}\n"
+            printf "${YELLOW}Example: export BBX_INSTALL_USER=bbxuser && ./bbx.sh install${NC}\n"
+            exit 1
+          fi
+          # Interactive mode - prompt for username
           read -p "Enter a regular user to run the installation: " install_user
           if [ -z "$install_user" ]; then
               printf "${RED}ERROR: A username is required${NC}\n"
@@ -1937,21 +2875,33 @@ pre_install() {
             create_master_user "$install_user"
         fi
 
-        # Download the install script using curl and save it to a file
-        echo "Downloading the installation script..."
-        curl -sSL "https://raw.githubusercontent.com/BrowserBox/BrowserBox/refs/heads/$branch/bbx.sh" -o /tmp/bbx.sh
+        cp -f "$0" /tmp/bbx.sh
         chmod +x /tmp/bbx.sh
         install_group="$(id -gn "$install_user")"
         chown "${install_user}:${install_group}" /tmp/bbx.sh
 
+        # Build a temp env file to persist BBX-related vars across the login shell.
+        local su_env_vars=(BBX_HOSTNAME EMAIL LICENSE_KEY BBX_TEST_AGREEMENT STATUS_MODE INSTALL_DOC_VIEWER BBX_NO_UPDATE BBX_RELEASE_REPO BBX_RELEASE_TAG TARGET_RELEASE_REPO PRIVATE_TAG GH_TOKEN GITHUB_TOKEN BBX_INSTALL_USER BB_QUICK_EXIT)
+        local env_file
+        env_file="$(mktemp)"
+        local var val
+        for var in "${su_env_vars[@]}"; do
+          val="${!var-}"
+          [[ -n "$val" ]] || continue
+          printf '%s=%q\n' "$var" "$val" >> "$env_file"
+        done
+        chown "${install_user}:${install_group}" "$env_file" 2>/dev/null || true
+        chmod 640 "$env_file" 2>/dev/null || true
+
         # Switch to the non-root user and run install
         echo "Switching to user $install_user..."
-        su - "$install_user" -c "export BBX_HOSTNAME=\"$BBX_HOSTNAME\"; export EMAIL=\"$EMAIL\"; export BBX_TEST_AGREEMENT=\"$BBX_TEST_AGREEMENT\"; export STATUS_MODE=\"$STATUS_MODE\"; /tmp/bbx.sh install"
+        su - "$install_user" -c "set -a; source $(printf '%q' "$env_file"); /tmp/bbx.sh install"
 
         if [[ -z "$BBX_TEST_AGREEMENT" ]] || [ -t 0 ]; then
           # Replace the root shell with the new user's shell
-          exec su - "$install_user" -c "export BBX_HOSTNAME=\"$BBX_HOSTNAME\"; export EMAIL=\"$EMAIL\"; export BBX_TEST_AGREEMENT=\"$BBX_TEST_AGREEMENT\"; export STATUS_MODE=\"$STATUS_MODE\"; bash -l"
+          exec su - "$install_user" -c "set -a; source $(printf '%q' "$env_file"); rm -f $(printf '%q' "$env_file"); bash -l"
         else
+          rm -f "$env_file"
           return 1
         fi
     else
@@ -2012,7 +2962,77 @@ uninstall() {
 
 certify() {
   load_config
-  printf "${GREEN}License certification is no longer required.${NC}\n"
+  printf "${YELLOW}Certifying BrowserBox license...${NC}\n"
+
+  # Check if a license key was provided as an argument
+  if [ -n "$1" ]; then
+    LICENSE_KEY="$1"
+    if [[ "$LICENSE_KEY" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
+      export LICENSE_KEY
+      certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify --force-license --no-reservation 2>&1")"
+      if [[ "$?" -eq 0 ]]; then
+        printf "${GREEN}License key validated with server.${NC}\n"
+        save_config
+        printf "${GREEN}Certification complete.${NC}\n"
+        return 0
+      else
+        printf "${RED}ERROR: License key invalid or server unreachable.${NC}\n"
+        echo "Certification output: $certout"
+        exit 1
+      fi
+    else
+      printf "${RED}ERROR: Invalid format. Must be 8 groups of 4 uppercase A-Z0-9 characters, separated by hyphens.${NC}\n"
+      exit 1
+    fi
+  fi
+
+  # No argument provided, proceed with existing logic
+  if [ -n "$LICENSE_KEY" ]; then
+    printf "${BLUE}Current key: $LICENSE_KEY${NC}\n"
+    if [[ -z "$BBX_TEST_AGREEMENT" ]]; then
+      printf "Press Enter to validate it, or enter a new key to update: "
+      read -r new_key
+      if [ -z "$new_key" ]; then
+        # Empty input: validate the current key
+        if validate_license_key; then
+          printf "${GREEN}License certified.${NC}\n"
+        else
+          printf "${YELLOW}Current key is invalid. Please enter a new one.${NC}\n"
+          validate_license_key "true"  # Force prompt for a new key if validation fails
+        fi
+      else
+        # Non-empty input: use it as the new key and validate
+        LICENSE_KEY="$new_key"
+        if [[ "$LICENSE_KEY" =~ ^[A-Z0-9]{4}(-[A-Z0-9]{4}){7}$ ]]; then
+          export LICENSE_KEY
+          certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify --force-license --no-reservation 2>&1")"
+          if [[ "$?" -eq 0 ]]; then
+            printf "${GREEN}License key validated with server.${NC}\n"
+            save_config
+          else
+            printf "${RED}ERROR: License key invalid or server unreachable.${NC}\n"
+            echo "Certification output: $certout"
+            validate_license_key "true"  # Fall back to full prompt loop if invalid
+          fi
+        else
+          printf "${RED}ERROR: Invalid format. Must be 8 groups of 4 uppercase A-Z0-9 characters, separated by hyphens.${NC}\n"
+          validate_license_key "true"  # Fall back to full prompt loop if format is wrong
+        fi
+      fi
+    else
+      # BBX_TEST_AGREEMENT is set, skip interactive prompt and validate current key
+      if validate_license_key; then
+        printf "${GREEN}License certified.${NC}\n"
+      else
+        printf "${RED}Current key ($LICENSE_KEY) is invalid in test mode.${NC}\n"
+        exit 1
+      fi
+    fi
+  else
+    printf "${BLUE}No product key found. Please enter one.${NC}\n"
+    validate_license_key "true"  # Force prompt for initial setup
+  fi
+  printf "${GREEN}Certification complete.${NC}\n"
 }
 
 ng_run() {
@@ -2027,13 +3047,18 @@ ng_run() {
     load_config
   fi
 
-  # Always run setup_nginx for ng-run
+  # Always run setup_nginx for ng-run (it's a standalone command installed in PATH)
   printf "${YELLOW}Starting Nginx setup...${NC}\n"
-  if ! setup_nginx; then
-    printf "${RED}Nginx setup failed. Aborting.${NC}\n"
-    exit 1
+  if command -v setup_nginx &>/dev/null; then
+    if ! setup_nginx; then
+      printf "${RED}Nginx setup failed. Aborting.${NC}\n"
+      exit 1
+    fi
+    printf "${GREEN}Nginx setup complete.${NC}\n"
+  else
+    printf "${YELLOW}Warning: setup_nginx command not found. Nginx setup skipped.${NC}\n"
+    printf "${YELLOW}This command should have been installed during 'bbx install'. Try reinstalling.${NC}\n"
   fi
-  printf "${GREEN}Nginx setup complete.${NC}\n"
 
   # Now, call the main run command, passing all original arguments.
   # The run command will handle calling setup if it's the very first run.
@@ -2049,13 +3074,8 @@ stop() {
 
 logs() {
     printf "${YELLOW}Displaying BrowserBox logs...${NC}\n"
-    ensure_nvm
-    if command -v pm2 >/dev/null; then
-        pm2 logs || { printf "${RED}pm2 logs failed${NC}\n"; exit 1; }
-    else
-        printf "${RED}pm2 not found. Install pm2 (npm i -g pm2) or check logs manually.${NC}\n"
-        exit 1
-    fi
+    bbpro pm2 list || printf "${YELLOW}bbpro pm2 list failed (shim may not be running).${NC}\n"
+    printf "${YELLOW}Tail a service log with:${NC} bbpro pm2 logs bb-main --lines 50\n"
 }
 
 # Helper function to convert epoch time to a timestamp format for touch -t
@@ -2142,11 +3162,14 @@ check_and_prepare_update() {
     return 0
   fi
 
-  # If a prepared build exists, only install it if it matches the live latest
-  if [ -f "$PREPARED_FILE" ] && [ -d "${BBX_NEW_DIR}/BrowserBox" ]; then
+  # If a prepared binary exists, only install it if it matches the live latest
+  if [ -f "$PREPARED_FILE" ]; then
+    local prepared_binary
+    prepared_binary=$(sed -n '2p' "$PREPARED_FILE" 2>/dev/null)
     local prepared_tag
-    prepared_tag="$(get_version_info "$PREPARED_VERSION_FILE")"
-    if [[ "$prepared_tag" == "$repo_tag" ]]; then
+    prepared_tag=$(sed -n '3p' "$PREPARED_FILE" 2>/dev/null)
+    
+    if [[ -n "$prepared_binary" ]] && [[ -f "$prepared_binary" ]] && [[ "$prepared_tag" == "$repo_tag" ]]; then
       printf "${YELLOW}Prepared update (${prepared_tag}) matches latest. Installing...${NC}\n"
       is_running_in_official && self_elevate_to_temp "${OGARGS[@]}"
       if check_prepare_and_install "$repo_tag"; then
@@ -2154,19 +3177,26 @@ check_and_prepare_update() {
       fi
     else
       printf "${YELLOW}Prepared update (${prepared_tag}) is stale vs latest (${repo_tag}); removing it.${NC}\n"
-      $SUDO rm -rf "$BBX_NEW_DIR" "$PREPARED_FILE" "$PREPARING_FILE" 2>/dev/null
+      rm -rf "$BBX_NEW_DIR" 2>/dev/null
+      $SUDO rm -f "$PREPARED_FILE" "$PREPARING_FILE" 2>/dev/null
     fi
   fi
 
   # Compare installed vs latest release (works for roll-forward or roll-back)
-  local current_tag
-  current_tag="$(get_version_info "$VERSION_FILE")"
+  local current_version
+  current_version="$(get_canonical_bbx_version)"
+  # Normalize for comparison (add 'v' prefix if missing)
+  local current_tag="$current_version"
+  if [[ "$current_tag" != "unknown" ]] && [[ "$current_tag" != v* ]]; then
+    current_tag="v$current_tag"
+  fi
+  
   printf "${BLUE}Current: $current_tag${NC}\n"
   printf "${BLUE}Latest: $repo_tag${NC}\n"
 
   if [[ "$current_tag" == "$repo_tag" ]]; then
     printf "${GREEN}Already on the latest version (${repo_tag}).${NC}\n"
-    [ -d "$BBX_NEW_DIR" ] && $SUDO rm -rf "$BBX_NEW_DIR" && printf "${YELLOW}Cleaned up $BBX_NEW_DIR${NC}\n"
+    [ -d "$BBX_NEW_DIR" ] && rm -rf "$BBX_NEW_DIR" && printf "${YELLOW}Cleaned up $BBX_NEW_DIR${NC}\n"
     return 0
   fi
 
@@ -2187,38 +3217,39 @@ check_prepare_and_install() {
   fi
   local repo_tag="$1"
 
-  # Check if BBX_NEW_DIR has a prepared version
+  # Check if a prepared binary exists
   if [ -f "$PREPARED_FILE" ]; then
-    local prepared_location
-    prepared_location=$(sed -n '2p' "$PREPARED_FILE")
-    if [ "$prepared_location" = "$BBX_NEW_DIR" ] && [[ -d "${BBX_NEW_DIR}/BrowserBox" ]]; then
-      if [ ! -d "${BBX_NEW_DIR}/BrowserBox" ] || [ ! -f "$PREPARED_VERSION_FILE" ]; then
-        $SUDO rm -rf "$BBX_NEW_DIR" "$PREPARED_FILE" "$PREPARING_FILE"
-        return 1
-      fi
+    local prepared_binary
+    prepared_binary=$(sed -n '2p' "$PREPARED_FILE")
+    
+    # Verify the prepared binary exists and is executable
+    if [ -f "$prepared_binary" ] && [ -x "$prepared_binary" ]; then
       local new_tag=""
-      # Prefer tag recorded during prepare (line 3)
+      # Get tag from line 3 of PREPARED_FILE
       new_tag=$(sed -n '3p' "$PREPARED_FILE" 2>/dev/null)
-      # Back-compat: fall back to version.json if no line-3 tag
-      if [ -z "$new_tag" ] || [ "$new_tag" = "unknown" ]; then
-        new_tag=$(get_version_info "$PREPARED_VERSION_FILE")
-      fi
 
       if [ "$new_tag" = "$repo_tag" ]; then
-        printf "${YELLOW}Latest version prepared in $BBX_NEW_DIR. Installing...${NC}\n"
-        printf "${YELLOW}Latest version prepared in $BBX_NEW_DIR. Installing...${NC}\n" >> "$LOG_FILE"
+        printf "${YELLOW}Latest version prepared at $prepared_binary. Installing...${NC}\n"
+        printf "${YELLOW}Latest version prepared at $prepared_binary. Installing...${NC}\n" >> "$LOG_FILE"
 
-        # Avoid self-overwrite while moving tree into place
+        # Avoid self-overwrite while swapping binary
         is_running_in_official && self_elevate_to_temp "${OGARGS[@]}"
 
-        # Move prepared version
-        $SUDO rm -rf "$BBX_HOME/BrowserBox" || { printf "${RED}Failed to remove $BBX_HOME/BrowserBox${NC}\n" >> "$LOG_FILE"; return 1; }
-        mv "$BBX_NEW_DIR/BrowserBox" "$BBX_HOME/BrowserBox" || { printf "${RED}Failed to move $BBX_NEW_DIR to $BBX_HOME/BrowserBox${NC}\n" >> "$LOG_FILE"; return 1; }
+        # Replace global binary with prepared binary (using INSTALL_CMD for sudo)
+        $INSTALL_CMD "$prepared_binary" "$BINARY_PATH" || { 
+          printf "${RED}Failed to install prepared binary to $BINARY_PATH${NC}\n" >> "$LOG_FILE"
+          return 1
+        }
 
-        # Run copy_install.sh
-        cd "$BBX_HOME/BrowserBox" && ./deploy-scripts/copy_install.sh >> "$LOG_FILE" 2>&1 || { printf "${RED}Failed to run copy_install.sh${NC}\n" >> "$LOG_FILE"; return 1; }
+        # Run internal updates/migrations after swapping binary
+        printf "${YELLOW}Running post-update installation tasks...${NC}\n" >> "$LOG_FILE"
+        "$BINARY_PATH" --install >> "$LOG_FILE" 2>&1 || { 
+          printf "${RED}Failed to run post-update installation${NC}\n" >> "$LOG_FILE"
+          return 1
+        }
 
-        # Clean up lock files
+        # Clean up prepared files
+        rm -rf "$BBX_NEW_DIR" || printf "${YELLOW}Warning: Failed to remove $BBX_NEW_DIR${NC}\n" >> "$LOG_FILE"
         $SUDO rm -f "$PREPARED_FILE" || printf "${YELLOW}Warning: Failed to remove $PREPARED_FILE${NC}\n" >> "$LOG_FILE"
 
         printf "${GREEN}Update to $repo_tag complete.${NC}\n" >> "$LOG_FILE"
@@ -2226,8 +3257,14 @@ check_prepare_and_install() {
         return 0
       else
         printf "${YELLOW}Prepared version ($new_tag) does not match latest ($repo_tag). Cleaning up and retrying...${NC}\n" >> "$LOG_FILE"
-        $SUDO rm -rf "$BBX_NEW_DIR" "$PREPARED_FILE" "$PREPARING_FILE" || printf "${YELLOW}Warning: Failed to clean up $BBX_NEW_DIR or $PREPARED_FILE${NC}\n" >> "$LOG_FILE"
+        rm -rf "$BBX_NEW_DIR" || printf "${YELLOW}Warning: Failed to clean up $BBX_NEW_DIR${NC}\n" >> "$LOG_FILE"
+        $SUDO rm -f "$PREPARED_FILE" "$PREPARING_FILE" || printf "${YELLOW}Warning: Failed to clean up lock files${NC}\n" >> "$LOG_FILE"
       fi
+    else
+      # Prepared binary missing or not executable, clean up
+      printf "${YELLOW}Prepared binary missing or not executable. Cleaning up...${NC}\n" >> "$LOG_FILE"
+      rm -rf "$BBX_NEW_DIR" || printf "${YELLOW}Warning: Failed to clean up $BBX_NEW_DIR${NC}\n" >> "$LOG_FILE"
+      $SUDO rm -f "$PREPARED_FILE" "$PREPARING_FILE" || printf "${YELLOW}Warning: Failed to clean up lock files${NC}\n" >> "$LOG_FILE"
     fi
   fi
   return 1
@@ -2239,53 +3276,61 @@ update() {
   fi
 
   load_config
-  mkdir -p "$BB_CONFIG_DIR"
-  chmod 700 "$BB_CONFIG_DIR"
-
-  # Arg parsing: none | --latest-rc | <version>
   local arg="${1:-}"
   local repo_tag=""
 
   if [[ -z "$arg" ]]; then
     printf "${YELLOW}Updating BrowserBox to latest stable...${NC}\n"
-    repo_tag="$(get_latest_repo_version stable)"
+    repo_tag="$(get_latest_release "$PUBLIC_REPO")"
   elif [[ "$arg" == "--latest-rc" ]]; then
     printf "${YELLOW}Updating BrowserBox to latest release candidate...${NC}\n"
-    repo_tag="$(get_latest_repo_version rc)"
-    if [[ "$repo_tag" == "unknown" ]]; then
-      printf "${RED}No RC releases found.${NC}\n"; return 1
-    fi
+    repo_tag="$(get_latest_release "$PUBLIC_REPO")"
   else
-    # explicit version/tag
     local tag="$(normalize_tag "$arg")"
     if [[ -z "$tag" ]]; then
       printf "${RED}Invalid version: '%s'${NC}\n" "$arg"
-      printf "Expected formats: v1.2.3 | 1.2.3 | v1.2.3-rc | v1.2.3-rc.1\n"
-      return 1
-    fi
-    if ! tag_exists_remote "$tag"; then
-      printf "${RED}Tag '%s' not found in remote.%s${NC}\n" "$tag" ""
       return 1
     fi
     repo_tag="$tag"
     printf "${YELLOW}Updating BrowserBox to %s...${NC}\n" "$repo_tag"
   fi
 
-  if [[ "$repo_tag" == unknown* ]]; then
-    printf "${RED}Could not determine version to update to. Check network or GH API rate limits.${NC}\n"
+  if [[ "$repo_tag" == unknown* ]] || [[ -z "$repo_tag" ]]; then
+    printf "${RED}Could not determine version to update to.${NC}\n"
     return 1
   fi
 
-  # If no installed tree, fall back to install (preserves your behavior)
-  if [ ! -d "$BBX_HOME" ] || [ ! -d "$BBX_HOME/BrowserBox" ] || [ ! -d "$BBX_SHARE/BrowserBox" ]; then
-    printf "${YELLOW}No BrowserBox installation found. Running interactive install...${NC}\n"
-    install
-    return $?
+  local platform
+  platform=$(detect_platform)
+
+  # Download
+  local download_output
+  download_output=$(download_binary "$platform" "$repo_tag")
+  local exit_status=$?
+
+  local temp_exe
+  temp_exe=$(echo "$download_output" | tail -n1 | tr -d '[:space:]')
+
+  if [[ $exit_status -ne 0 ]] || [[ -z "$temp_exe" ]] || [[ ! -f "$temp_exe" ]]; then
+      printf "${RED}Download failed.${NC}\n"
+      if [[ -n "$BBX_DEBUG" ]]; then echo "Debug: $download_output" >&2; fi
+      return 1
   fi
 
-  # Prepare in background to $repo_tag, then try install
-  update_background "$repo_tag"
-  [ -n "$BBX_NO_UPDATE" ] || check_prepare_and_install "$repo_tag"
+  # Execute
+  printf "${YELLOW}Running post-update installation tasks...${NC}\n"
+  "$temp_exe" --install
+  local install_exit=$?
+
+  rm -f "$temp_exe"
+
+  if [ $install_exit -eq 0 ]; then
+    printf "${GREEN}BrowserBox updated to ${repo_tag}${NC}\n"
+    return 0
+  else
+    printf "${RED}Post-update installation failed${NC}\n"
+    return 1
+  fi
 }
 
 update_background() {
@@ -2302,8 +3347,6 @@ update_background() {
     # default channel = stable
     repo_tag="$(get_latest_repo_version stable)"
   fi
-  local tagdoo="${repo_tag#v}"
-
   printf "${YELLOW}Checking update lock...${NC}\n" >> "$LOG_FILE"
   # Check lock files
   if is_lock_file_recent "$PREPARING_FILE"; then
@@ -2318,41 +3361,68 @@ update_background() {
   printf "${YELLOW}Requesting update lock...${NC}\n" >> "$LOG_FILE"
   # Create preparing lock file
   $SUDO mkdir -p "$BBX_SHARE" || { printf "${RED}Failed to create install directory $BBX_SHARE ... ${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
-  # Lines: 1=timestamp, 2=prepared_dir, 3=git_tag (exact, incl. -rc if present)
-  printf "%s\n%s\n%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BBX_NEW_DIR" "$repo_tag" | $SUDO tee "$PREPARING_FILE" >/dev/null || { printf "${RED}Failed to create $PREPARING_FILE${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
+  # Lines: 1=timestamp, 2=prepared_binary_path, 3=git_tag (exact, incl. -rc if present)
+  printf "%s\n%s\n%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BBX_NEW_DIR/browserbox" "$repo_tag" | $SUDO tee "$PREPARING_FILE" >/dev/null || { printf "${RED}Failed to create $PREPARING_FILE${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
 
   printf "${YELLOW}Starting background update to $repo_tag...${NC}\n" >> "$LOG_FILE"
   # Clean up any existing BBX_NEW_DIR
-  $SUDO rm -rf "$BBX_NEW_DIR" || { printf "${RED}Failed to clean $BBX_NEW_DIR${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
-  mkdir -p "$BBX_NEW_DIR" || { printf "${RED}Failed to create $BBX_NEW_DIR/BrowserBox${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
-  DLURL="${REPO_URL}/archive/refs/tags/${repo_tag}.zip";
-  echo "Getting: $DLURL" >> "$LOG_FILE"
+  rm -rf "$BBX_NEW_DIR" || { printf "${RED}Failed to clean $BBX_NEW_DIR${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
+  mkdir -p "$BBX_NEW_DIR" || { printf "${RED}Failed to create $BBX_NEW_DIR${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
+  
+  # Determine platform and download URL for binary
+  local platform
+  platform=$(detect_platform)
+  local asset_name
+  case "$platform" in
+    macos) asset_name="browserbox-macos-arm64" ;;
+    linux) asset_name="browserbox-linux-x64" ;;
+    *) 
+      printf "${RED}Unsupported platform: $platform${NC}\n" >> "$LOG_FILE"
+      $SUDO rm -f "$PREPARING_FILE"
+      return 1
+      ;;
+  esac
+  
+  local download_url="https://github.com/${PUBLIC_REPO}/releases/download/${repo_tag}/${asset_name}"
+  local temp_binary="$BBX_NEW_DIR/browserbox"
+  
+  printf "${YELLOW}Downloading binary from $download_url...${NC}\n" >> "$LOG_FILE"
 
-  curl -sSL --connect-timeout 8 "$DLURL" -o "$BBX_NEW_DIR/BrowserBox.zip" || {
+  local curl_auth=()
+  if [[ -n "${GH_TOKEN:-}" ]]; then
+    curl_auth=(-H "Authorization: token ${GH_TOKEN}")
+  fi
+  
+  # Use curl directly (no INSTALL_CMD/sudo) to avoid background sudo prompts
+  curl -L --fail --progress-bar --connect-timeout 30 "${curl_auth[@]}" -o "$temp_binary" "$download_url" >> "$LOG_FILE" 2>&1 || {
     printf "${YELLOW}Skipping update due to timeout or failure in connecting to BrowserBox repo${NC}\n" >> "$LOG_FILE"
     $SUDO rm -f "$PREPARING_FILE"
-    $SUDO rm -f "$BBX_NEW_DIR/BrowserBox.zip" 2>/dev/null
-    $SUDO rm -rf "$BBX_NEW_DIR" 2>/dev/null
+    rm -f "$temp_binary" 2>/dev/null
+    rm -rf "$BBX_NEW_DIR" 2>/dev/null
+    return 1
+  }
+  
+  # Verify binary was downloaded and is not empty
+  if [[ ! -s "$temp_binary" ]]; then
+    printf "${RED}Downloaded binary is empty${NC}\n" >> "$LOG_FILE"
+    $SUDO rm -f "$PREPARING_FILE"
+    rm -f "$temp_binary"
+    rm -rf "$BBX_NEW_DIR"
+    return 1
+  fi
+
+  # Make binary executable
+  chmod +x "$temp_binary" || { 
+    printf "${RED}Failed to make binary executable${NC}\n" >> "$LOG_FILE"
+    $SUDO rm -f "$PREPARING_FILE"
+    rm -f "$temp_binary"
+    rm -rf "$BBX_NEW_DIR"
     return 1
   }
 
-  printf "${YELLOW}Unzipping archive for $repo_tag...${NC}\n" >> "$LOG_FILE"
-  unzip -q -o "$BBX_NEW_DIR/BrowserBox.zip" -d "$BBX_NEW_DIR/BrowserBox-zip" || { printf "${RED}Failed to extract BrowserBox repo${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
-
-  printf "${YELLOW}Moving folder into place...${NC}\n" >> "$LOG_FILE"
-  mv "$BBX_NEW_DIR/BrowserBox-zip/BrowserBox-$tagdoo" "$BBX_NEW_DIR/BrowserBox" || { printf "${RED}Failed to move extracted files${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
-  $SUDO rm -rf "$BBX_NEW_DIR/BrowserBox-zip" "$BBX_NEW_DIR/BrowserBox.zip"
-
-  chmod +x "$BBX_NEW_DIR/BrowserBox/deploy-scripts/global_install.sh" || { printf "${RED}Failed to make global_install.sh executable${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
-
-  printf "${YELLOW}Preparing update...${NC}\n" >> "$LOG_FILE"
-  cd "$BBX_NEW_DIR/BrowserBox"
-  export BBX_NO_COPY=1
-  yes yes | ./deploy-scripts/global_install.sh "$BBX_HOSTNAME" "$EMAIL" >> "$LOG_FILE" 2>&1 || { printf "${RED}Failed to run global_install.sh${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
-
   # Mark as prepared (record the exact git tag)
   printf "${YELLOW}Marking update as prepared...${NC}\n" >> "$LOG_FILE"
-  printf "%s\n%s\n%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BBX_NEW_DIR" "$repo_tag" | $SUDO tee "$PREPARED_FILE" >/dev/null || { printf "${RED}Failed to create $PREPARED_FILE${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
+  printf "%s\n%s\n%s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$temp_binary" "$repo_tag" | $SUDO tee "$PREPARED_FILE" >/dev/null || { printf "${RED}Failed to create $PREPARED_FILE${NC}\n" >> "$LOG_FILE";  $SUDO rm -f "$PREPARING_FILE" ; exit 1; }
 
   # Remove preparing lock file
   printf "${YELLOW}Completing preparation step (removing update lock)...${NC}\n" >> "$LOG_FILE"
@@ -2366,6 +3436,8 @@ license() {
     draw_box "Terms: https://dosaygo.com/terms.txt"
     draw_box "License: $REPO_URL/blob/${branch}/LICENSE.md"
     draw_box "Privacy: https://dosaygo.com/privacy.txt"
+    draw_box "Get a License: https://dosaygo.com/license"
+    printf "Run 'bbx certify' to enter your product key.\n"
 }
 
 status() {
@@ -2621,10 +3693,14 @@ run_as() {
     TOKEN=$(openssl rand -hex 16)
 
     # Run setup_bbpro with explicit PATH and fresh token, redirecting output as the target user
-    $SUDO -u "$user" bash -c "PATH=/usr/local/bin:\$PATH setup_bbpro --port $port --token $TOKEN > ~/.config/dosyago/bbpro/setup_output.txt 2>&1" || { printf "${RED}Setup failed for $user${NC}\n"; $SUDO cat "$HOME_DIR/.config/dosyago/bbpro/setup_output.txt"; exit 1; }
+    $SUDO -u "$user" bash -c "PATH=/usr/local/bin:\$PATH LICENSE_KEY="${LICENSE_KEY}" setup_bbpro --port $port --token $TOKEN > ~/.config/dosyago/bbpro/setup_output.txt 2>&1" || { printf "${RED}Setup failed for $user${NC}\n"; $SUDO cat "$HOME_DIR/.config/dosyago/bbpro/setup_output.txt"; exit 1; }
 
-    # License validation removed
-    $SUDO -u "$user" bash -c "PATH=/usr/local/bin:\$PATH; bbpro" || { printf "${RED}Failed to run BrowserBox as $user${NC}\n"; exit 1; }
+    # Use caller's LICENSE_KEY
+    if [ -z "$LICENSE_KEY" ]; then
+        printf "${RED}No product key set in LICENSE_KEY env var. Run 'bbx activate' or go to dosaygo.com to get a valid product key.${NC}\n"
+        exit 1
+    fi
+    $SUDO -u "$user" bash -c "PATH=/usr/local/bin:\$PATH; export LICENSE_KEY='$LICENSE_KEY'; bbcertify && bbpro" || { printf "${RED}Failed to run BrowserBox as $user${NC}\n"; exit 1; }
     sleep 2
 
     # Retrieve token
@@ -2641,43 +3717,230 @@ run_as() {
     save_config
 }
 
+# Helper: Test if an IP is reachable for Win9x
+test_ip_connectivity() {
+  local ip=$1
+  local port=$2
+  local timeout_seconds=2
+  # Use curl with a short timeout to test HTTP connectivity
+  if timeout "$timeout_seconds" curl --silent --connect-timeout "$timeout_seconds" "http://$ip:$port" &>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+# Helper: Find best LAN IP for Win9x compatibility
+find_best_ip() {
+  local port="$1"
+
+  # Get all IPv4 addresses, excluding loopback initially
+  local ips=""
+  if command -v ip >/dev/null 2>&1; then
+    # Linux: Use `ip addr show` to get IPv4 addresses
+    ips=$(ip addr show | grep 'inet ' | awk '{print $2}' | cut -d'/' -f1 | grep -v '^127\.0\.0\.1')
+  elif command -v ifconfig >/dev/null 2>&1; then
+    # macOS/BSD: Use `ifconfig` to get IPv4 addresses
+    ips=$(ifconfig | grep 'inet ' | awk '{print $2}' | grep -v '^127\.0\.0\.1')
+  fi
+
+  # Append 127.0.0.1 last to prioritize LAN IPs
+  ips="$ips 127.0.0.1"
+
+  # Test each IP and use the first one that works
+  local best_ip=""
+  for ip in $ips; do
+    if test_ip_connectivity "$ip" "$port"; then
+      best_ip="$ip"
+      break
+    fi
+  done
+
+  # If no connectable IP found, return the first non-loopback or fallback to localhost
+  if [[ -z "$best_ip" ]]; then
+    for ip in $ips; do
+      if [[ "$ip" != "127.0.0.1" ]]; then
+        best_ip="$ip"
+        break
+      fi
+    done
+    [[ -z "$best_ip" ]] && best_ip="127.0.0.1"
+  fi
+
+  echo "$best_ip"
+}
+
+# Helper: Show animated Windows flag
+show_win9x_flag() {
+  # Windows flag colors: red, green, blue, yellow
+  cat <<EOF
+[?25l[5C[49m         [38;5;232;48;5;232m▄[38;5;232;48;5;16m▄[49m                                      [0m
+[5C[49m        [49m [49m [49m [49m [38;5;232;48;5;16m▄[38;5;232;48;5;16m▄[38;5;232;48;5;232m▄[49m [49m  [49m                               [0m
+[5C[49m        [38;5;232;48;5;131m▄[49m  [49m [49m [49m [38;5;232;49m▄[38;5;16;48;5;16m▄[38;5;16m▄[38;5;232;48;5;232m▄[38;5;16;49m▄[38;5;16m▄[38;5;16m▄[49m [49m                           [0m
+[5C[49m      [49m [38;5;95;49m▄[49m [49m [49m [38;5;16;48;5;203m▄[38;5;232;48;5;95m▄[49m [49m [49m [49m [38;5;16;48;5;232m▄[38;5;16;48;5;16m▄[38;5;16m▄[38;5;232;48;5;16m▄[38;5;16;49m▄[38;5;16;48;5;16m▄[48;5;16m▄[48;5;16m▄[38;5;232;48;5;232m▄[38;5;16;49m▄[48;5;232m▄[48;5;232m▄[38;5;16;48;5;232m▄[38;5;16;49m▄[38;5;16;48;5;16m▄[48;5;16m▄[48;5;16m▄[48;5;232m▄[49m▄[49m▄[38;5;16;49m▄[38;5;16;49m▄[38;5;16m▄[49m [49m        [0m
+[5C[49m         [49m [38;5;95;49m▄[49m [49m [38;5;52;48;5;95m▄[38;5;52;48;5;203m▄[38;5;16;48;5;95m▄[49m [38;5;131;49m▄[38;5;167m▄[38;5;95m▄[49m [38;5;232;48;5;16m▄[38;5;232m▄[38;5;232m▄[38;5;232;48;5;16m▄[38;5;16;48;5;16m▄[48;5;16m  [38;5;16m▄[38;5;52;48;5;16m▄[38;5;232;48;5;232m▄[38;5;16;48;5;16m▄         [38;5;16;48;5;16m▄[48;5;232m▄[38;5;16;49m▄[49m [49m    [0m
+[5C[49m    [49m [38;5;16;49m▄[38;5;232m▄  [38;5;232;48;5;95m▄[48;5;95m▄[49m [38;5;52;49m▄[38;5;59m▄[49m [49m [38;5;16;48;5;131m▄[38;5;16;48;5;203m▄[38;5;16m▄[49m [38;5;167;49m▄[38;5;203;48;5;95m▄[48;5;95m▄[38;5;52;48;5;52m▄[38;5;16;49m▄[38;5;16;48;5;16m▄[48;5;16m▄[48;5;16m▄[38;5;52;49m▄[38;5;203;48;5;167m▄[48;5;203m▄[48;5;203m  [48;5;167m▄[48;5;131m▄[38;5;131;48;5;95m▄[38;5;16;48;5;16m▄[48;5;16m [38;5;58m▄[38;5;59m▄[38;5;16m▄    [38;5;16;48;5;16m▄[38;5;16;49m▄[49m [49m [0m
+[5C[49m     [38;5;232;48;5;16m▄[49m [49m [38;5;16;49m▄[38;5;16m▄ [49m [38;5;232;48;5;203m▄[48;5;167m▄[49m [38;5;167;49m▄[38;5;203;49m▄[38;5;167;49m▄[49m [49m [38;5;232;48;5;131m▄[38;5;16;48;5;131m▄[38;5;16;48;5;95m▄[38;5;16;49m▄[38;5;16;48;5;16m▄[38;5;16m▄[38;5;16m▄[38;5;16;48;5;16m▄[38;5;203;48;5;131m▄[48;5;203m     [38;5;167m▄[38;5;16;48;5;52m▄[48;5;16m [38;5;16m▄[38;5;150;48;5;107m▄[48;5;150m [48;5;150m▄[48;5;65m▄[38;5;150;48;5;16m▄[38;5;59;48;5;16m▄[38;5;16m▄  [38;5;16;48;5;16m▄[38;5;16;49m▄[0m
+[5C[49m   [38;5;59m▄[38;5;67m▄  [38;5;232;48;5;232m▄[48;5;16m▄[49m [38;5;16;49m▄[38;5;16m▄[38;5;16m▄[49m [49m [38;5;232;48;5;131m▄[48;5;131m▄[48;5;58m▄[38;5;95;49m▄[38;5;203;48;5;167m▄[48;5;167m▄[38;5;95;48;5;167m▄[38;5;16;49m▄[38;5;16;48;5;16m▄[48;5;16m▄[48;5;16m▄[38;5;16;48;5;16m▄[38;5;167;48;5;95m▄[48;5;203m     [38;5;203m▄[38;5;16;48;5;95m▄[48;5;16m [38;5;16m▄[38;5;150;48;5;65m▄[48;5;150m     [38;5;108m▄[38;5;16;48;5;22m▄[48;5;16m  [38;5;16m▄[38;5;232;48;5;16m▄[0m
+[5C[49m      [38;5;66m▄[38;5;67m▄[49m [49m [38;5;232;48;5;16m▄[48;5;16m▄[38;5;232;48;5;232m▄[38;5;16;49m▄[38;5;16;48;5;232m▄[48;5;232m▄[38;5;232;49m▄[49m [38;5;232;48;5;58m▄[38;5;232;48;5;52m▄[38;5;232;49m▄[49m [38;5;16;48;5;16m▄[38;5;16;48;5;16m▄[38;5;16m▄[38;5;232;48;5;16m▄[38;5;131;48;5;52m▄[48;5;203m      [38;5;52;48;5;131m▄[48;5;16m [38;5;16m▄[38;5;107;48;5;59m▄[48;5;150m     [38;5;150m▄[38;5;16;48;5;59m▄[48;5;16m   [38;5;232;48;5;16m▄[49m [0m
+[5C[49m [49m [38;5;67;49m▄[49m [49m    [49m [38;5;67;49m▄[38;5;67m▄[49m [49m [38;5;232;48;5;16m▄[48;5;16m▄[48;5;16m▄[38;5;16;48;5;232m▄[48;5;16m   [38;5;232;48;5;16m▄[38;5;16;48;5;16m▄[48;5;16m▄[48;5;16m [38;5;16m▄[38;5;17;48;5;16m▄[38;5;16;48;5;52m▄[48;5;52m▄[48;5;52m▄[48;5;52m▄[48;5;52m▄[48;5;95m▄[48;5;95m▄[48;5;232m▄[48;5;16m [38;5;58;48;5;22m▄[38;5;107;48;5;150m▄     [38;5;16;48;5;101m▄[48;5;16m   [38;5;232;48;5;16m▄[49m  [0m
+[5C[49m    [49m [38;5;74;49m▄[49m [49m  [38;5;232;48;5;60m▄[48;5;23m▄[49m [38;5;74;48;5;59m▄[48;5;60m▄[38;5;60;48;5;60m▄[49m [38;5;17;48;5;232m▄[38;5;23;48;5;232m▄[38;5;23;48;5;232m▄[49m [38;5;16;48;5;16m▄[38;5;16;48;5;16m▄[38;5;16m▄[38;5;16m▄[38;5;59;48;5;16m▄[38;5;74;48;5;16m▄[48;5;23m▄[48;5;23m▄[48;5;23m▄[48;5;16m▄[48;5;16m▄[38;5;60;48;5;16m▄  [38;5;16m▄ [38;5;16;48;5;16m▄[48;5;58m▄[48;5;101m▄[38;5;58;48;5;150m▄[38;5;108m▄[38;5;59;48;5;107m▄[38;5;16;48;5;16m▄[48;5;16m  [38;5;16;48;5;16m▄[49m   [0m
+[5C[38;5;16;49m▄[38;5;16;48;5;16m▄[49m     [38;5;67;49m▄[38;5;74;49m▄[38;5;59m▄[49m  [38;5;232;48;5;23m▄[49m [49m [38;5;73;48;5;59m▄[48;5;74m [38;5;74m▄[38;5;23;48;5;67m▄[38;5;16;48;5;232m▄[48;5;16m   [38;5;17;48;5;16m▄[38;5;74;48;5;67m▄[48;5;74m     [38;5;67m▄[38;5;16;48;5;16m▄[48;5;16m [38;5;58;48;5;16m▄[38;5;220;48;5;184m▄[48;5;136m▄[48;5;16m▄[38;5;178;48;5;16m▄[38;5;52m▄ [38;5;16;48;5;16m▄[48;5;16m▄[48;5;16m  [38;5;16;48;5;16m▄[49m    [0m
+[5C[49m  [49m [38;5;16;48;5;16m▄[38;5;16;48;5;16m▄[49m [49m   [49m [38;5;73;48;5;59m▄[38;5;74;48;5;67m▄[38;5;74;48;5;74m▄[38;5;16;48;5;23m▄[38;5;59;49m▄[38;5;60;49m▄[38;5;66;49m▄[49m [38;5;232;49m▄[38;5;16;48;5;16m▄[38;5;16;48;5;16m▄[38;5;16;48;5;16m▄[38;5;16;48;5;16m▄[38;5;74;48;5;66m▄[48;5;74m     [38;5;74m▄[38;5;16;48;5;23m▄[48;5;16m [38;5;16m▄[38;5;220;48;5;178m▄[48;5;220m    [48;5;220m▄[38;5;178;48;5;100m▄[38;5;16;48;5;16m▄[48;5;16m  [38;5;16m▄[49m [49m    [0m
+[5C[49m    [49m [38;5;16;49m▄[38;5;16;48;5;16m▄[38;5;16;48;5;16m▄[49m [49m [49m [49m [49m [49m [38;5;66;48;5;74m▄[38;5;66;48;5;74m▄[38;5;59;48;5;74m▄[38;5;16;49m▄[38;5;16;48;5;16m▄[48;5;16m  [38;5;16;48;5;16m▄[38;5;74;48;5;59m▄[48;5;74m     [38;5;74m▄[38;5;16;48;5;60m▄[48;5;16m [38;5;16m▄[38;5;220;48;5;100m▄[48;5;220m     [38;5;220m▄[38;5;16;48;5;58m▄[48;5;16m  [38;5;16m▄[38;5;232;48;5;232m▄[49m     [0m
+[5C[49m       [49m [38;5;16;48;5;16m▄[48;5;16m▄[38;5;16m▄[38;5;232;48;5;16m▄[38;5;16;49m▄[38;5;16;49m▄[49m▄[38;5;16;49m▄[38;5;232;49m▄[38;5;16;48;5;16m▄[38;5;16;48;5;16m▄[38;5;16;48;5;16m▄[38;5;16m▄[38;5;16;48;5;23m▄[38;5;16;48;5;74m▄▄[38;5;16m▄[38;5;16m▄[38;5;23m▄[38;5;59m▄[38;5;17;48;5;67m▄[48;5;16m [38;5;16m▄[38;5;178;48;5;58m▄[48;5;220m      [38;5;16;48;5;100m▄[48;5;16m  [38;5;16m▄[38;5;232;48;5;16m▄[49m      [0m
+[5C[49m           [38;5;232;49m▄[38;5;16;48;5;16m▄[38;5;16m▄[38;5;232m▄[38;5;232;48;5;16m▄[38;5;16;48;5;16m▄[48;5;16m  [38;5;16m▄[38;5;16;48;5;16m▄[48;5;16m         [38;5;16;48;5;16m▄[48;5;94m▄[38;5;16;48;5;184m▄[38;5;58;48;5;220m▄[38;5;178m▄  [38;5;58;48;5;142m▄[48;5;16m   [38;5;232;48;5;16m▄[49m       [0m
+[5C[49m               [38;5;232;48;5;232m▄[48;5;16m▄[48;5;16m▄[48;5;16m▄[49m [48;5;232m▄[48;5;16m▄[48;5;16m▄[48;5;16m▄[48;5;16m▄[38;5;232;48;5;16m▄[38;5;232;48;5;16m▄[38;5;232m▄[38;5;16m▄[38;5;16m▄    [38;5;16;48;5;16m▄[48;5;94m▄[38;5;16;48;5;178m▄[38;5;16;48;5;16m▄[48;5;16m  [38;5;232;48;5;16m▄[49m        [0m
+[5C[49m                              [38;5;232;48;5;232m▄[38;5;232;48;5;16m▄[38;5;232;48;5;16m▄[38;5;16m▄     [38;5;16;48;5;16m▄[49m         [0m
+[5C[49m                                  [38;5;232;48;5;16m▄[38;5;232;48;5;16m▄[38;5;16;48;5;16m▄ [38;5;16m▄[49m          [0m
+[5C[49m                                     [38;5;232;48;5;16m▄[49m [49m          [0m
+[?25h
+EOF
+}
+
+# Win9x compatibility run
+win9x_run() {
+  banner
+  show_win9x_flag
+  load_config
+  ensure_deps
+
+  # Trigger setup if not fully configured
+  if [ -z "$PORT" ] || [ -z "$BBX_HOSTNAME" ] || [[ ! -f "${BB_CONFIG_DIR}/test.env" ]] ; then
+    printf "${YELLOW}BrowserBox not fully set up. Running 'bbx setup' first...${NC}\n"
+    setup "$@" # Pass any arguments like --port to setup
+    load_config
+  fi
+
+  [ -n "$TOKEN" ] || TOKEN=$(openssl rand -hex 16)
+  printf "${YELLOW}Starting BrowserBox in Win9x Compatibility Mode...${NC}\n"
+
+  # Set Win9x compatibility mode environment variable
+  export WIN9X_COMPATIBILITY_MODE="true"
+  export BBX_DONT_KILL_CHROME_ON_STOP="true"
+
+  # Setup with explicit token
+  local setup_cmd="setup_bbpro --port $PORT --token $TOKEN"
+  LICENSE_KEY="${LICENSE_KEY}" $setup_cmd &>/dev/null || { printf "${RED}Setup failed${NC}\n"; exit 1; }
+  
+  # Reload config to get updated values
+  source "${BB_CONFIG_DIR}/test.env" && PORT="${APP_PORT:-$PORT}" && TOKEN="${LOGIN_TOKEN:-$TOKEN}" || { printf "${YELLOW}Warning: test.env not found${NC}\n"; }
+  
+  # Validate license key
+  export LICENSE_KEY
+  certout="$(bash -c "export LICENSE_KEY=\"$LICENSE_KEY\"; bbcertify 2>&1")"
+  if [[ "$?" -ne 0 ]]; then
+    printf "${RED}License key invalid or missing. Run 'bbx activate' or go to dosaygo.com to get a valid key.${NC}\n"
+    echo "Certification output: $certout"
+    exit 1
+  else
+    printf "${GREEN}Certification complete.${NC}\n"
+    if [[ -f "$CERT_META_FILE" ]]; then
+      # shellcheck disable=SC1090
+      source "$CERT_META_FILE"
+      export BBX_RESERVATION_CODE BBX_RESERVED_SEAT_ID BBX_TICKET_ID BBX_TICKET_SLOT
+    fi
+  fi
+
+  # Start bbpro in background, redirecting output to suppress banner
+  printf "${YELLOW}Starting BrowserBox server (silent mode)...${NC}\n"
+  export WIN9X_COMPATIBILITY_MODE="true"
+  export BBX_DONT_KILL_CHROME_ON_STOP="true"
+  nohup bbpro > /dev/null 2>&1 &
+  
+  # Wait for server to start (allows time for initialization and login.link generation)
+  local startup_wait=8
+  printf "${YELLOW}Waiting for Win9x Compatibility server to initialize...${NC}\n"
+  sleep "$startup_wait"
+
+  # Extract login link and modify for Win9x
+  local login_link=""
+  if [[ -f "${BB_CONFIG_DIR}/login.link" ]]; then
+    login_link=$(cat "${BB_CONFIG_DIR}/login.link")
+  else
+    login_link="http://$BBX_HOSTNAME:$PORT/login?token=$TOKEN"
+  fi
+
+  # Extract path and replace /login with /win9x in one operation
+  local rest="${login_link#*://*/}"
+  rest="/${rest//login?/win9x/?}"
+  
+  # Find best IP for Win9x compatibility
+  printf "${YELLOW}Detecting best LAN IP address...${NC}\n"
+  local best_ip=$(find_best_ip "$PORT")
+  
+  if [[ -z "$best_ip" ]]; then
+    printf "${RED}Could not find a connectable IP address on port $PORT${NC}\n"
+    best_ip="127.0.0.1"
+  fi
+
+  # Generate Win9x compatibility login link (HTTP, not HTTPS)
+  local win9x_link="http://${best_ip}:${PORT}${rest}"
+
+  echo "$best_ip" > "${BB_CONFIG_DIR}/win9x.best.ip"
+
+  printf "${GREEN}BrowserBox Win9x Compatibility Mode is running!${NC}\n"
+  draw_box "Win9x Login Link: $win9x_link"
+  printf "\n${YELLOW}Note: This link uses HTTP (not HTTPS) and /win9x/ path for legacy browser compatibility.${NC}\n"
+  printf "${YELLOW}Use this link from your Windows 9x machine with Internet Explorer 4+.${NC}\n\n"
+}
+
 version() {
-    printf "${GREEN}bbx version ${BBX_VERSION}${NC}\n"
+    printf "${GREEN}bbx version ${VERSION}${NC}\n"
 }
 
 usage() {
     banner
-    printf "${BLUE}\t\t\t\t Welcome to the ${CYAN}bbx${BLUE} CLI tool for BrowserBox!${NC}\n"
-    printf "\n"
-    printf "${BOLD}Usage:${NC}\n\t\t ${BOLD}bbx ${NC}<command> [options]\n"
-    printf "\n"
-    printf "${BOLD}Commands:${NC}\n"
-    printf "\n"
-    printf "  ${GREEN}install${NC}        Install BrowserBox + ${BOLD}bbx${NC} CLI\n"
-    printf "  ${GREEN}uninstall${NC}      Remove everything\n"
-    printf "  ${CYAN}activate${NC}       Purchase a license\t\t\t${BOLD}${CYAN}bbx activate [number of people]${NC}\n"
-    printf "  ${GREEN}setup${NC}          Configure options \t\t\t${BOLD}bbx setup [--port|-p <p>] [--hostname|-h <h>] [--token|-t <t>] [--zeta|-z]${NC}\n"
-    printf "\n"
-    printf "  ${BOLD}\t\t   setup options:${NC}\n"
-    printf "         \t         ${GREEN}--zeta, -z${NC}       Expose each service as a unique hostname. Useful for nginx,\n"
-    printf "         \t                          ngrok, similar layers, or standard HTTP/S ports. Expects hosts.env\n"
-    # certify command removed - license check no longer needed
-    printf "  ${GREEN}run${NC}            Run BrowserBox \t\t\t${BOLD}bbx run [--port|-p <port>] [--hostname|-h <hostname>]${NC}\n"
-    printf "  ${GREEN}stop${NC}           Stop BrowserBox (current user)\n"
-    printf "  ${GREEN}run-as${NC}         Run as a specific user \t\t${BOLD}bbx run-as [--temporary] [username] [port]${NC}\n"
-    printf "  ${GREEN}stop-user${NC}      Stop BrowserBox for a specific user \t${BOLD}bbx stop-user <username> [delay_seconds]${NC}\n"
-    printf "  ${GREEN}logs${NC}           Show BrowserBox logs\n"
-    printf "  ${GREEN}update${NC}         Update BrowserBox       \t\t${BOLD}bbx update [<version>|--latest-rc]${NC}\n"
-    printf "  ${GREEN}status${NC}         Check BrowserBox status\n"
-    printf "  ${PURPLE}tor-run${NC}        Run BrowserBox on Tor      \t\t${BOLD}bbx tor-run [--no-darkweb] [--no-onion]${NC}\n"
-    printf "  ${BLUE}zt-run${NC}         Run BrowserBox with ZeroTier tunnel\t${BOLD}bbx zt-run${NC}\n"
-    printf "  ${GREEN}docker-run${NC}     Run BrowserBox using Docker \t\t${BOLD}bbx docker-run [nickname] [--port|-p <port>]${NC}\n"
-    printf "  ${GREEN}docker-stop${NC}    Stop a Dockerized BrowserBox \t\t${BOLD}bbx docker-stop <nickname>${NC}\n"
-    printf "  ${BLUE}${BOLD}automate${NC}      *Drive with script, MCP or REPL\n"
-    printf "  ${GREEN}ng-run${NC}         Run BrowserBox with Nginx proxy\t${BOLD}bbx ng-run${NC}\n"
-    printf "  ${GREEN}--version${NC}      Show version\n"
-    printf "  ${GREEN}--help${NC}         Show this help\n"
-    printf "\n${BLUE}${BOLD}*automate coming soon${NC}\n\n"
+    printf "${BLUE}\t\t\t\t Welcome to the ${CYAN}bbx${BLUE} CLI for BrowserBox!${NC}\n\n"
+    printf "${BOLD}Usage:${NC}\n"
+    printf "  bbx <command> [options]\n\n"
+
+    printf "${BOLD}SETUP & MANAGEMENT${NC}\n"
+    printf "  ${GREEN}install${NC}        Install BrowserBox and this CLI.\n"
+    printf "  ${GREEN}uninstall${NC}      Remove all BrowserBox components.\n"
+    printf "  ${GREEN}setup${NC}          Configure core options. ${BOLD}bbx setup [--port|-p <p>] [--hostname|-h <h>] [--token|-t <t>] [--zeta|-z]${NC}\n"
+    printf "  ${CYAN}activate${NC}       Activate a license for more users. ${BOLD}bbx activate [number_of_users]${NC}\n"
+    printf "  ${GREEN}certify${NC}        Validate your current license status.\n"
+    printf "  ${GREEN}update${NC}         Update BrowserBox to a specific or latest version. ${BOLD}bbx update [<version>|--latest-rc]${NC}\n"
+    printf "  ${GREEN}status${NC}         Check the running status of BrowserBox.\n"
+    printf "  ${GREEN}logs${NC}           View the logs for the BrowserBox service.\n\n"
+
+    printf "${BOLD}CORE ACTIONS${NC}\n"
+    printf "  ${GREEN}start${NC}           Start BrowserBox for the current user. ${BOLD}bbx start [--port|-p <port>] [--hostname|-h <hostname>]${NC}\n"
+    printf "  ${GREEN}stop${NC}            Stop the BrowserBox instance for the current user.\n"
+    printf "  ${GREEN}start-as${NC}        Run a new instance as a different OS user. ${BOLD}bbx start-as [--temporary] [username] [port]${NC}\n"
+    printf "  ${GREEN}stop-user${NC}       Stop a BrowserBox instance for a specific user. ${BOLD}bbx stop-user <username> [delay_seconds]${NC}\n\n"
+
+    printf "${BOLD}ADVANCED RUNNERS & TUNNELS${NC}\n"
+    printf "  ${GREEN}docker-start${NC}    Run BrowserBox inside a Docker container. ${BOLD}bbx docker-start [nickname] [--port|-p <port>]${NC}\n"
+    printf "  ${GREEN}docker-stop${NC}     Stop a Dockerized BrowserBox instance. ${BOLD}bbx docker-stop <nickname>${NC}\n"
+    printf "  ${CYAN}cf-start${NC}        Run BrowserBox securely through a Cloudflare tunnel. ${BOLD}bbx cf-start [--port|-p <port>]${NC}\n"
+    printf "  ${BLUE}zt-start${NC}        Expose BrowserBox on your ZeroTier network.\n"
+    printf "  ${PURPLE}tor-start${NC}       Serve BrowserBox as a Tor hidden service. ${BOLD}bbx tor-start [--no-darkweb] [--no-onion]${NC}\n"
+    printf "  ${GREEN}ng-start${NC}        Proxy BrowserBox with Nginx.\n"
+    printf "  ${YELLOW}win9x-start${NC}     Run in Windows 9x compatibility mode.\n\n"
+
+    printf "${BOLD}OTHER COMMANDS${NC}\n"
+    printf "  ${BLUE}${BOLD}automate${NC}       Drive BrowserBox with scripts (coming soon).\n"
+    printf "  ${GREEN}--faq${NC}           Display frequently asked questions.\n"
+    printf "  ${GREEN}--version${NC}       Show the version of the bbx CLI.\n"
+    printf "  ${GREEN}--help${NC}          Show this help screen.\n\n"
+    printf "  ${NC}bbx CLI version ${VERSION}  |  © DOSAYGO Corp 2018-2025${NC}\n\n"
+}
+
+faq() {
+    printf "${BOLD}${CYAN}BrowserBox CLI - Frequently Asked Questions${NC}\n\n"
+
+    printf "${BOLD}1) How do I run multiple BrowserBox instances?${NC}\n"
+    printf "   First, ensure your license has enough seats for multiple users. You can then either:\n"
+    printf "   a) Use the ${GREEN}start-as${NC} command to run a new instance under a different OS user.\n"
+    printf "      Example: ${BOLD}bbx start-as browserbox_user2 8081${NC}\n"
+    printf "   b) Use the ${GREEN}docker-start${NC} command to run isolated instances in containers.\n"
+    printf "      Example: ${BOLD}bbx docker-start team_a --port 8090${NC}\n"
+    printf "   ${YELLOW}Important:${NC} Make sure the ports you specify for each instance are unique and do not overlap.\n\n"
+
+    # Add more FAQs here as needed
+    # printf "${BOLD}2) Another question?${NC}\n"
+    # printf "   Answer to the other question.\n\n"
 }
 
 check_agreement() {
@@ -2688,7 +3951,7 @@ check_agreement() {
     return 0
   fi
   if [ ! -f "$BB_CONFIG_DIR/.agreed" ]; then
-      printf "${BLUE}BrowserBox v13 Terms:${NC} https://dosaygo.com/terms.txt\n"
+      printf "${BLUE}BrowserBox v15 Terms:${NC} https://dosaygo.com/terms.txt\n"
       printf "${BLUE}License:${NC} $REPO_URL/blob/${branch}/LICENSE.md\n"
       printf "${BLUE}Privacy:${NC} https://dosaygo.com/privacy.txt\n"
       read -r -p " Agree? (yes/no): " AGREE
@@ -2729,13 +3992,13 @@ activate() {
   local spinner_idx=0
   local counter=0
   local state="unvisited"
-  # License key variable removed
+  local license_key=""
   local seats_provisioned=0
   local total_seats=0
 
   trap 'printf "\nInterrupted\n"; exit 1' INT TERM
 
-  while [ $attempts -lt $max_awatts ]; do
+  while [ $attempts -lt $max_attempts ]; do
     if [ $((counter % spinner_interval)) -eq 0 ]; then
       spinner_idx=$(( (spinner_idx + 1) % 4 ))
       local spinner="${spinner_chars:$spinner_idx:1}"
@@ -2744,7 +4007,7 @@ activate() {
     if [ $((counter % poll_interval)) -eq 0 ]; then
       local response=$(curl --connect-timeout 7 -s "https://browse.cloudtabs.net/api/license-status?session_id=$session_id")
       state=$(echo "$response" | jq -r '.state // "unvisited"')
-      # License key extraction removed
+      license_key=$(echo "$response" | jq -r '.license_key // ""')
       seats_provisioned=$(echo "$response" | jq -r '.seats_provisioned // 0')
       total_seats=$(echo "$response" | jq -r '.total_seats // 0')
       attempts=$((attempts + 1))
@@ -2762,9 +4025,10 @@ activate() {
         ;;
       "provisioned_complete")
         printf "\n"
+        LICENSE_KEY="$license_key"
         SEATS="$total_seats"
         save_config
-        printf "${GREEN}Success! $SEATS seats fully provisioned.${NC}\n"
+        printf "${GREEN}Success! License key: $LICENSE_KEY, $SEATS seats fully provisioned.${NC}\n"
         draw_box "BrowserBox is ready to use with $SEATS seats!"
         trap - INT TERM
         return 0
@@ -2789,11 +4053,12 @@ activate() {
 # Call check_and_prepare_update with the first argument
 [ -n "$BBX_NO_UPDATE" ] || check_and_prepare_update "$1"
 case "$1" in
-    install) shift 1; install "$@";;
+    install) shift 1; install_bbx "$@";;
     uninstall) shift 1; uninstall "$@";;
     setup) shift 1; setup "$@";;
     certify) shift 1; certify "$@";;
-    run) shift 1; run "$@";;
+    run|start) shift 1; run "$@";;
+    restart) shift 1; restart "$@";;
     stop) shift 1; stop "$@";;
     stop-user) shift 1; stop_user "$@";;
     logs) shift 1; logs "$@";;
@@ -2801,15 +4066,17 @@ case "$1" in
     update-background) shift 1; update_background "$@";;
     activate) shift 1; activate "$@";;
     status) shift 1; status "$@";;
-    run-as) shift 1; run_as "$@";;
-    tor-run) shift 1; banner_color=$PURPLE; tor_run "$@";;
-    zt-run) shift 1; banner_color=$BLUE; zt_run "$@";;
-    ng-run) shift 1; banner_color=$GREEN; ng_run "$@";;
-    docker-run) shift 1; docker_run "$@";;
+    run-as|start-as) shift 1; run_as "$@";;
+    tor-run|tor-start) shift 1; banner_color=$PURPLE; tor_run "$@";;
+    zt-run|zt-start) shift 1; banner_color=$BLUE; zt_run "$@";;
+    cf-run|cf-start) shift 1; banner_color=$CYAN; cf_run "$@";;
+    ng-run|ng-start) shift 1; banner_color=$GREEN; ng_run "$@";;
+    docker-run|docker-start) shift 1; docker_run "$@";;
     docker-stop) shift 1; docker_stop "$@";;
+    win9x-run|win9x-start) shift 1; banner_color=$YELLOW; win9x_run "$@";;
     --version|-v) shift 1; version "$@";;
     --help|-h) shift 1; usage "$@";;
+    --faq) shift 1; faq "$@";; 
     "") usage;;
     *) printf "${RED}Unknown command: $1${NC}\n"; usage; exit 1;;
 esac
-
