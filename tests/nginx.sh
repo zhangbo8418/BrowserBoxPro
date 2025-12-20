@@ -302,7 +302,6 @@ write_mappings_to_config() {
     echo "# --- ${APP_NAME}:${USER} mappings $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
     # Write non-mapping variables if set
     [[ -n "${DOMAIN:-}" ]] && echo "export DOMAIN=${DOMAIN}"
-    [[ -n "${EMAIL:-}" ]] && echo "export EMAIL=${EMAIL}"
     [[ -n "${HTTP_ONLY:-}" ]] && echo "export HTTP_ONLY=${HTTP_ONLY}"
     [[ -n "${CENTER_PORT:-}" ]] && echo "export CENTER_PORT=${CENTER_PORT}"
     [[ -n "${BACKEND_SCHEME:-}" ]] && echo "export BACKEND_SCHEME=${BACKEND_SCHEME}"
@@ -416,7 +415,7 @@ copy_certs_to_home() {
 # ---- Main worker ----
 # ---- Main worker ----
 wildcard_routes() {
-  local domain="" email="" center_port=""
+  local domain="" center_port=""
   local backend_scheme="" # "https" (default) or "http"
   local WRITE_HOSTS="true" # optional flag
   local DO_CLEANUP_ONLY="false"
@@ -428,7 +427,6 @@ wildcard_routes() {
       --cleanup) DO_CLEANUP_ONLY="true"; shift;;
       --no-preclean) SKIP_PRECLEAN="true"; shift;;
       -d|--domain) domain="${2:-}"; shift 2;;
-      -e|--email) email="${2:-}"; shift 2;;
       -p|--center-port) center_port="${2:-}"; shift 2;;
       --backend) backend_scheme="${2:-}"; shift 2;; # http|https
       --backend-http|--backend-http-only)
@@ -463,7 +461,6 @@ USAGE
   # shellcheck disable=SC1090
   . "$CONFIG_FILE"
   domain="${domain:-${DOMAIN:-$domain}}"
-  email="${email:-${EMAIL:-$email}}"
   center_port="${center_port:-${CENTER_PORT:-$center_port}}"
   backend_scheme="${backend_scheme:-${BACKEND_SCHEME:-$backend_scheme}}"
   if [[ "${HTTP_ONLY:-}" == "true" && -z "${backend_scheme:-}" ]]; then backend_scheme="http"; fi
@@ -476,7 +473,6 @@ USAGE
     return 0
   fi
   [[ -n "${domain:-}" ]] || die "Missing --domain and no DOMAIN in ${CONFIG_FILE}."
-  [[ -n "${email:-}" ]] || die "Missing --email and no EMAIL in ${CONFIG_FILE}."
   [[ -n "${center_port:-}" ]] || die "Missing --center-port and no CENTER_PORT in ${CONFIG_FILE}."
   [[ "$center_port" =~ ^[0-9]+$ ]] || die "--center-port must be an integer."
   (( center_port >= 1 && center_port <= 65535 )) || die "Center port out of range 1..65535."
@@ -615,7 +611,6 @@ EOF
   # Atomically write the new config file, persisting the effective settings.
   {
     echo "export DOMAIN=${domain}"
-    echo "export EMAIL=${email}"
     echo "export CENTER_PORT=${center_port}"
     echo "export BACKEND_SCHEME=${backend_scheme}"
     echo

@@ -79,8 +79,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BBX_HOSTNAME: "localhost"
           BB_QUICK_EXIT: "yesplease"
-          EMAIL: "test@example.com"
-          LICENSE_KEY: ${{ secrets.BB_LICENSE_KEY }}
           STATUS_MODE: ${{ secrets.STATUS_MODE_KEY }}
           INSTALL_DOC_VIEWER: "false"
           BBX_RELEASE_REPO: ${{ env.TARGET_RELEASE_REPO }}
@@ -96,8 +94,6 @@ jobs:
           BBX_INSTALL_USER: "bbxuser"
           BBX_HOSTNAME: "localhost"
           BB_QUICK_EXIT: "yesplease"
-          EMAIL: "test@example.com"
-          LICENSE_KEY: ${{ secrets.BB_LICENSE_KEY }}
           BBX_TEST_AGREEMENT: "true"
           STATUS_MODE: ${{ secrets.STATUS_MODE_KEY }}
           INSTALL_DOC_VIEWER: "false"
@@ -106,12 +102,10 @@ jobs:
           BBX_RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           [ -z "$BBX_HOSTNAME" ] && echo "BBX_HOSTNAME is not set" || echo "BBX_HOSTNAME is set"
-          [ -z "$EMAIL" ] && echo "EMAIL is not set" || echo "EMAIL is set"
-          [ -z "$LICENSE_KEY" ] && echo "LICENSE_KEY is not set" || echo "LICENSE_KEY is set"
           [ -z "$BBX_TEST_AGREEMENT" ] && echo "BBX_TEST_AGREEMENT is not set" || echo "BBX_TEST_AGREEMENT is set"
           [ -z "$STATUS_MODE" ] && echo "STATUS_MODE is not set" || echo "STATUS_MODE is set"
           [ -z "$INSTALL_DOC_VIEWER" ] && echo "INSTALL_DOC_VIEWER is not set" || echo "INSTALL_DOC_VIEWER is set to $INSTALL_DOC_VIEWER"
-          export INSTALL_DOC_VIEWER STATUS_MODE BBX_TEST_AGREEMENT LICENSE_KEY EMAIL BBX_HOSTNAME BB_QUICK_EXIT
+          export INSTALL_DOC_VIEWER STATUS_MODE BBX_TEST_AGREEMENT BBX_HOSTNAME BB_QUICK_EXIT
           ./tests/test-bbx.sh
         continue-on-error: false
 
@@ -122,9 +116,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BBX_FORCE_CHROME_INSTALL: "true"
           BBX_HOSTNAME: "localhost"
-          EMAIL: "test@example.com"
           BB_QUICK_EXIT: "surewhatevs"
-          LICENSE_KEY: ${{ secrets.BB_LICENSE_KEY }}
           BBX_TEST_AGREEMENT: "true"
           STATUS_MODE: ${{ secrets.STATUS_MODE_KEY }}
           BBX_RELEASE_REPO: ${{ env.TARGET_RELEASE_REPO }}
@@ -132,8 +124,6 @@ jobs:
         run: |
           # Debug variables
           if (-not $env:BBX_HOSTNAME) { Write-Host "BBX_HOSTNAME is not set" } else { Write-Host "BBX_HOSTNAME is set" }
-          if (-not $env:EMAIL) { Write-Host "EMAIL is not set" } else { Write-Host "EMAIL is set" }
-          if (-not $env:LICENSE_KEY) { Write-Host "LICENSE_KEY is not set" } else { Write-Host "LICENSE_KEY is set" }
           if (-not $env:BBX_TEST_AGREEMENT) { Write-Host "BBX_TEST_AGREEMENT is not set" } else { Write-Host "BBX_TEST_AGREEMENT is set" }
           if (-not $env:STATUS_MODE) { Write-Host "STATUS_MODE is not set" } else { Write-Host "STATUS_MODE is set" }
           # Install BrowserBox from checked-out repo
@@ -148,7 +138,7 @@ jobs:
             exit 1
           }
           Write-Host "curl.exe installed successfully"
-          bbx setup -Hostname "$env:BBX_HOSTNAME" -Email "$env:EMAIL" -Port 9999
+          bbx setup -Hostname "$env:BBX_HOSTNAME" -Port 9999
           $loginLink = Get-Content "$env:USERPROFILE\.config\dosyago\bbpro\login.link"
           Write-Host "Login link: $loginLink"
           bbx run 
