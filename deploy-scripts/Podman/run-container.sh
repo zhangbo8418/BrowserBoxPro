@@ -11,7 +11,6 @@ CONFIG_FILE="$CONFIG_DIR/config"
 
 PORT="${1:-}"      # required
 HOSTNAME="${2:-}"  # required
-EMAIL="${3:-}"     # required
 
 IMG_DOCKER_HUB="dosaygo/browserbox:latest"
 IMG_GHCR="ghcr.io/browserbox/browserbox:latest"
@@ -45,8 +44,8 @@ echo "BrowserBox v13 Terms: https://dosaygo.com/terms.txt | License: https://git
 # License key check removed - no longer required
 
 # Args
-if [[ -z "$PORT" || -z "$HOSTNAME" || -z "$EMAIL" ]]; then
-  echo "ERROR: Usage: $0 <PORT> <HOSTNAME> <EMAIL>" >&2; exit 1
+if [[ -z "$PORT" || -z "$HOSTNAME" ]]; then
+  echo "ERROR: Usage: $0 <PORT> <HOSTNAME>" >&2; exit 1
 fi
 if ! ([[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 4024 ] && [ "$PORT" -le 65533 ]); then
   echo "ERROR: PORT must be 4024-65533 (5-port range needed)!" >&2
@@ -139,7 +138,7 @@ fetch_certs() {
       echo "Fetching certs for $HOSTNAME (must resolve to $(get_ip))..." >&2
       bash <(curl -s "https://raw.githubusercontent.com/BrowserBox/BrowserBox/${branch}/deploy-scripts/wait_for_hostname.sh") "$HOSTNAME"
     fi
-    BB_USER_EMAIL="$EMAIL" CERT_DIR="$CERT_DIR" \
+    CERT_DIR="$CERT_DIR" \
       bash <(curl -s "https://raw.githubusercontent.com/BrowserBox/BrowserBox/${branch}/deploy-scripts/tls") "$HOSTNAME"
   fi
   chmod 600 "$CERT_DIR"/*.pem 2>/dev/null || true

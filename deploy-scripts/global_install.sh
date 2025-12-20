@@ -4,7 +4,7 @@
 # Installs and configures BrowserBox Pro on a machine.
 #
 # Usage:
-#   ./global_install.sh <hostname> [email_for_letsencrypt]
+#   ./global_install.sh <hostname>
 #
 # Environment Variables:
 #   BBX_DEBUG: If set, runs the script in debug mode (set -x).
@@ -32,7 +32,6 @@ export DEFAULT_NODE_VERSION
 
 # --- Global Variables ---------------------------------------------------------
 # These are set by functions and used by others.
-BBX_EMAIL=""
 BBX_HOSTNAME=""
 SUDO=""
 ZONE=""
@@ -256,7 +255,6 @@ check_license_agreement() {
         log_info "Terms accepted. Proceeding..."
         mkdir -p "$CONFIG_DIR"
         touch "${CONFIG_DIR}/.agreed"
-        echo "$BBX_EMAIL" >> "${CONFIG_DIR}/.agreed"
     else
         log_error "Terms not accepted. Exiting installation."
         exit 1
@@ -277,45 +275,33 @@ open_firewall_ports() {
     fi
 }
 
-# Sets up SSL certificates using mkcert for local hostnames or LetsEncrypt for public ones.
+# Sets up SSL certificates using mkcert for all hostnames.
 setup_ssl() {
     local hostname="$1"
-    local email="${2-}"
 
-    if is_local_hostname "$hostname"; then
-        log_info "Local hostname detected. Setting up SSL with mkcert..."
-        if ! command -v mkcert &>/dev/null; then
-            log_info "Installing mkcert..."
-            case "$(get_os_type)" in
-                macOS)
-                    if command -v brew &>/dev/null; then
-                        brew install nss mkcert
-                    else
-                        log_warning "Homebrew not found. Please install mkcert manually or install Homebrew."
-                        log_warning "Visit: https://brew.sh"
-                        return 0  # Continue without mkcert for now
-                    fi
-                    ;;
-                win)   log_error "Please install mkcert manually on Windows." ; exit 1 ;;
-                *)     $SUDO "$APT" install -y libnss3-tools wget && \
-                       tmpdir="$(mktemp -d)" && \
-                       wget -qO "${tmpdir}/mkcert" "https://dl.filippo.io/mkcert/latest?for=linux/$(dpkg --print-architecture 2>/dev/null || uname -m)" && \
-                       chmod +x "${tmpdir}/mkcert" && $SUDO mv "${tmpdir}/mkcert" /usr/local/bin/ && rm -rf "${tmpdir}" ;;
-            esac
-        fi
-        mkcert -install
-        mkdir -p "$HOME/sslcerts"
-        (cd "$HOME/sslcerts" && mkcert --cert-file fullchain.pem --key-file privkey.pem "$hostname" localhost 127.0.0.1)
-    else
-        log_info "Public hostname detected. Setting up SSL with LetsEncrypt (via tls script)..."
-        if [[ -z "$email" ]]; then
-            log_error "An email address (for LetsEncrypt) is required as the second argument for public hostnames."
-            exit 1
-        fi
-        export BB_USER_EMAIL="$email"
-        ./deploy-scripts/wait_for_hostname.sh "$hostname"
-        ./deploy-scripts/tls "$hostname"
+    log_info "Setting up SSL with mkcert..."
+    if ! command -v mkcert &>/dev/null; then
+        log_info "Installing mkcert..."
+        case "$(get_os_type)" in
+            macOS)
+                if command -v brew &>/dev/null; then
+                    brew install nss mkcert
+                else
+                    log_warning "Homebrew not found. Please install mkcert manually or install Homebrew."
+                    log_warning "Visit: https://brew.sh"
+                    return 0  # Continue without mkcert for now
+                fi
+                ;;
+            win)   log_error "Please install mkcert manually on Windows." ; exit 1 ;;
+            *)     $SUDO "$APT" install -y libnss3-tools wget && \
+                   tmpdir="$(mktemp -d)" && \
+                   wget -qO "${tmpdir}/mkcert" "https://dl.filippo.io/mkcert/latest?for=linux/$(dpkg --print-architecture 2>/dev/null || uname -m)" && \
+                   chmod +x "${tmpdir}/mkcert" && $SUDO mv "${tmpdir}/mkcert" /usr/local/bin/ && rm -rf "${tmpdir}" ;;
+        esac
     fi
+    mkcert -install
+    mkdir -p "$HOME/sslcerts"
+    (cd "$HOME/sslcerts" && mkcert --cert-file fullchain.pem --key-file privkey.pem "$hostname" localhost 127.0.0.1)
     log_info "SSL setup complete."
 }
 
@@ -335,20 +321,11 @@ main() {
 
     local hostname="${1-}"
     if [[ -z "$hostname" ]]; then
-        log_error "Usage: $0 <hostname> <your_email_for_terms_acceptance>"
+        log_error "Usage: $0 <hostname>"
         log_error "A hostname (e.g., 'localhost' or 'bbx.example.com') is required."
         exit 1
     fi
 
-    local email="${2-}"
-
-    if [[ -z "$email" ]]; then
-        log_error "Usage: $0 <hostname> <your_email_for_terms_acceptance>"
-        log_error "An email is required."
-        exit 1
-    fi
-
-    BBX_EMAIL="${email}"
     BBX_HOSTNAME="${hostname}"
 
     setup_sudo

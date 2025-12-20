@@ -16,12 +16,6 @@ fi
 
 export STATUS_MODE="${STATUS_MODE}"
 
-if [[ -z "$LICENSE_KEY" ]]; then
-  echo "Set license key env" >&2
-  exit 1
-fi
-export LICENSE_KEY="${LICENSE_KEY}"
-
 if [[ -z "$INSTALL_DOC_VIEWER" ]]; then
   echo "[ Warning ]: Install doc viewer is not set for tests. Setting..." >&2
   INSTALL_DOC_VIEWER="false"
@@ -35,18 +29,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
 
 # Avoid git safe.directory prompts/noise in CI
 git config --global --add safe.directory "$REPO_ROOT" 2>/dev/null || true
-
-# Safely handle bbcertify output
-if command -v bbcertify; then
-  cert_file=$(bbcertify --no-reservation)
-  reservation_file="${HOME}/.config/dosyago/bbpro/tickets/reservation.json"
-  if [ $? -eq 0 ] && [ -n "$cert_file" ] && [ -f "$cert_file" ]; then
-    rm -f "$cert_file"
-    rm -f "$reservation_file"
-  else
-    echo "Warning: bbcertify failed or no file to remove" >&2
-  fi
-fi
 
 # ANSI colors
 RED='\033[0;31m'
@@ -71,8 +53,6 @@ trap 'echo -e "\n${NC}Test Summary:"; \
 
 # Environment variables (standardized to uppercase)
 export BBX_HOSTNAME="${BBX_HOSTNAME:-localhost}"
-export EMAIL="${EMAIL:-test@example.com}"
-export LICENSE_KEY="${LICENSE_KEY:-TEST-KEY-1234-5678-90AB-CDEF-GHIJ-KLMN-OPQR}"
 export BBX_TEST_AGREEMENT="${BBX_TEST_AGREEMENT:-true}"
 export BBX_DEBUG=false
 
@@ -180,7 +160,7 @@ test_install() {
           sudo -u "$install_user" cp -r "$user_home/.bbx/BrowserBox" "$user_home/" 2>/dev/null || true
         fi
         # Forward only the BBX-related env we rely on via a temp file to avoid su - env stripping.
-        su_env_vars=(BBX_HOSTNAME EMAIL LICENSE_KEY BBX_TEST_AGREEMENT STATUS_MODE INSTALL_DOC_VIEWER BBX_NO_UPDATE BBX_RELEASE_REPO BBX_RELEASE_TAG TARGET_RELEASE_REPO PRIVATE_TAG GH_TOKEN GITHUB_TOKEN BBX_INSTALL_USER BB_QUICK_EXIT)
+        su_env_vars=(BBX_HOSTNAME BBX_TEST_AGREEMENT STATUS_MODE INSTALL_DOC_VIEWER BBX_NO_UPDATE BBX_RELEASE_REPO BBX_RELEASE_TAG TARGET_RELEASE_REPO PRIVATE_TAG GH_TOKEN GITHUB_TOKEN BBX_INSTALL_USER BB_QUICK_EXIT)
         env_file="$(mktemp)"
         for var in "${su_env_vars[@]}"; do
           val="${!var-}"

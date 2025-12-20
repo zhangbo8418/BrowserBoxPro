@@ -18,7 +18,6 @@ fi
 # Vars & Defaults
 PORT="${1:-}" # Main port (e.g., 8080)
 HOSTNAME="${2:-}" # DNS hostname
-EMAIL="${3:-}" # User email
 DOCKER_IMAGE_DOSAYGO="dosaygo/browserbox:latest"
 DOCKER_IMAGE_GHCR="ghcr.io/browserbox/browserbox:latest"
 CERT_DIR="$HOME/sslcerts"
@@ -49,8 +48,8 @@ if [ "$EUID" -ne 0 ] && ! have_sudo; then
 fi
 # License Agreement & Key removed - no longer required
 # Args Check (OG)
-if [[ -z "$PORT" || -z "$HOSTNAME" || -z "$EMAIL" ]]; then
-  echo "ERROR: Usage: $0 <PORT> <HOSTNAME> <EMAIL>" >&2; exit 1
+if [[ -z "$PORT" || -z "$HOSTNAME" ]]; then
+  echo "ERROR: Usage: $0 <PORT> <HOSTNAME>" >&2; exit 1
 fi
 if ! ([[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 4024 ] && [ "$PORT" -le 65533 ]); then
   echo "ERROR: PORT must be 4024-65533 (5-port range needed)!" >&2
@@ -195,7 +194,7 @@ fetch_certs() {
       }
     fi
     # tls helper writes into $CERT_DIR as current user
-    BB_USER_EMAIL="$EMAIL" CERT_DIR="$CERT_DIR" bash <(curl -s "https://raw.githubusercontent.com/BrowserBox/BrowserBox/${branch}/deploy-scripts/tls") "$HOSTNAME" || {
+    CERT_DIR="$CERT_DIR" bash <(curl -s "https://raw.githubusercontent.com/BrowserBox/BrowserBox/${branch}/deploy-scripts/tls") "$HOSTNAME" || {
       echo "ERROR: Cert fetch failed!" >&2
       exit 1
     }

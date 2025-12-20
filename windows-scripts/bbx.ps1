@@ -42,7 +42,6 @@ $ScriptMap = @{
     "run"       = "start.ps1"
     "start"     = "start.ps1"
     "stop"      = "stop.ps1"
-    "certify"   = "certify.ps1"
     "prepare"   = "prepare.ps1"
     "uninstall" = "uninstall.ps1"
 }
@@ -308,9 +307,6 @@ function Invoke-SetupLite {
     if (-not $hostname) { $hostname = (Get-ArgValue -ArgList $ArgList -Name "--hostname") }
     if (-not $hostname) { $hostname = "localhost" }
 
-    $email = (Get-ArgValue -ArgList $ArgList -Name "-Email")
-    if (-not $email) { $email = (Get-ArgValue -ArgList $ArgList -Name "--email") }
-
     $port = Get-ArgIntValue -ArgList $ArgList -Name "-Port" -DefaultValue 8080
     if ($port -eq 8080) { $port = Get-ArgIntValue -ArgList $ArgList -Name "--port" -DefaultValue 8080 }
 
@@ -319,7 +315,6 @@ function Invoke-SetupLite {
     if (-not $token) { $token = [System.Guid]::NewGuid().ToString() }
 
     $existing = Read-TestEnv -Path $testEnvPath
-    $licenseToKeep = if ($env:LICENSE_KEY) { $env:LICENSE_KEY } elseif ($existing.ContainsKey("LICENSE_KEY")) { $existing["LICENSE_KEY"] } else { $null }
 
     $appPort = $port
     $audioPort = $port - 2
@@ -337,7 +332,6 @@ function Invoke-SetupLite {
         "SSLCERTS_DIR=$($env:USERPROFILE)\\sslcerts"
         "DOMAIN=$hostname"
     )
-    if ($licenseToKeep) { $envContent += "LICENSE_KEY=$licenseToKeep" }
     $envContent -join "`r`n" | Out-File $testEnvPath -Encoding utf8
 
     $sslDir = Join-Path $env:USERPROFILE "sslcerts"
@@ -372,7 +366,6 @@ function Start-BrowserBoxMainDetached {
     $pidFile = Join-Path $cfgDir "browserbox-main.pid"
 
     $env:BB_CONFIG_DIR = $cfgDir
-    if ($cfg.ContainsKey("LICENSE_KEY") -and -not $env:LICENSE_KEY) { $env:LICENSE_KEY = $cfg["LICENSE_KEY"] }
     if ($cfg.ContainsKey("DOMAIN")) { $env:BBX_HOSTNAME = $cfg["DOMAIN"] }
 
     Write-Verbose "Starting BrowserBox main detached (port=$appPort token=$loginToken)..."
@@ -455,9 +448,7 @@ function Show-Help {
     Write-Host "  setup           Create/update test.env + login.link" -ForegroundColor White
     Write-Host "  run             Start BrowserBox main (detached)" -ForegroundColor White
     Write-Host "  stop            Stop BrowserBox main (best-effort)" -ForegroundColor White
-    Write-Host "  certify         Validate license and obtain ticket" -ForegroundColor White
     Write-Host "  uninstall       Remove BrowserBox from this machine" -ForegroundColor White
-    Write-Host "  revalidate      Clear ticket and revalidate license" -ForegroundColor White
     Write-Host "  --version, -v   Show version information" -ForegroundColor White
     Write-Host "  --help, -h      Show this help message" -ForegroundColor White
     Write-Host ""
@@ -490,10 +481,8 @@ function Show-CommandHelp {
         "run" { & (Join-Path $PSScriptRoot "start.ps1") -Help; return }
         "start" { & (Join-Path $PSScriptRoot "start.ps1") -Help; return }
         "stop" { & (Join-Path $PSScriptRoot "stop.ps1") -Help; return }
-        "certify" { & (Join-Path $PSScriptRoot "certify.ps1") -Help; return }
         "uninstall" { & (Join-Path $PSScriptRoot "uninstall.ps1") -Help; return }
         "prepare" { Write-Host "bbx prepare (no help available)" -ForegroundColor Yellow; return }
-        "revalidate" { Write-Host "bbx revalidate (no options)" -ForegroundColor Yellow; return }
         default { Show-Help; return }
     }
 }

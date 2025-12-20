@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#/usr/bun/env bash haha
+# Certificate renewal no longer needed - using mkcert for all certificates
 
 if [[ -z "$1" ]]; then
   echo "no domain in first position. renew_tls failing"
@@ -11,13 +11,6 @@ if [[ -z "$2" ]]; then
   exit 1
 fi
 
-sudo certbot renew --quiet --deploy-hook "touch task_copy_certs_and_restart"
-if [ -f task_copy_certs_and_restart ]; then
-  mkdir -p /home/$2/sslcerts
-  sudo -u root cp_certs $1 /home/$2/sslcerts/
-  GROUP="$(id -gn "$2")"
-  sudo chown "${2}:${GROUP}" /home/$2/sslcerts/*
-  sudo shutdown -r +5
-  rm task_copy_certs_and_restart
-fi
-
+# mkcert certificates don't need renewal
+echo "Certificate renewal not needed - mkcert certificates are self-signed and don't expire."
+exit 0

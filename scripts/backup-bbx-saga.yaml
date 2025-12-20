@@ -51,15 +51,11 @@ jobs:
         run: |
           # Explicitly export variables
           export BBX_HOSTNAME="localhost"
-          export EMAIL="test@example.com"
-          export LICENSE_KEY="${{ secrets.BB_LICENSE_KEY }}"
           export BBX_TEST_AGREEMENT="true"
           export STATUS_MODE="${{ secrets.STATUS_MODE_KEY }}"
 
           # Debug safely: Check if variables are set without printing their values
           if [ -z "$BBX_HOSTNAME" ]; then echo "BBX_HOSTNAME is not set"; else echo "BBX_HOSTNAME is set"; fi
-          if [ -z "$EMAIL" ]; then echo "EMAIL is not set"; else echo "EMAIL is set"; fi
-          if [ -z "$LICENSE_KEY" ]; then echo "LICENSE_KEY is not set"; else echo "LICENSE_KEY is set"; fi
           if [ -z "$BBX_TEST_AGREEMENT" ]; then echo "BBX_TEST_AGREEMENT is not set"; else echo "BBX_TEST_AGREEMENT is set"; fi
           if [ -z "$STATUS_MODE" ]; then echo "STATUS_MODE is not set"; else echo "STATUS_MODE is set"; fi
 

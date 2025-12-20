@@ -57,19 +57,7 @@ if ($mkcertPath -and (Confirm-Action "Remove mkcert?")) {
     Write-Host "Skipping mkcert removal." -ForegroundColor Yellow
 }
 
-# Remove certbot
-$certbotPath = (Get-Command certbot -ErrorAction SilentlyContinue).Path
-if ($certbotPath -and (Confirm-Action "Remove Certbot?")) {
-    Write-Host "Removing Certbot..." -ForegroundColor Cyan
-    winget uninstall --id EFF.Certbot --silent
-    if ($?) {
-        Write-Host "Certbot removed successfully."
-    } else {
-        Write-Warning "Failed to remove Certbot -- it may still be installed."
-    }
-} else {
-    Write-Host "Skipping Certbot removal." -ForegroundColor Yellow
-}
+# Certbot removal no longer needed
 
 # Remove install directory
 if ((Test-Path $installDir) -and (Confirm-Action "Remove BrowserBox install directory ($installDir)?")) {

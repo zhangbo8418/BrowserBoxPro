@@ -11,11 +11,11 @@ if [[ -z "$2" ]]; then
 fi
 
 mkdir -p $2
-if [ -f /etc/os-release ]; then
-  . /etc/os-release
-fi
-if [[ $ID == *"bsd" ]] || [[ -d /usr/local/etc/letsencrypt/live/$1 ]]; then
-  cp -r -L /usr/local/etc/letsencrypt/live/$1/* $2
+# Copy certificates from user's sslcerts directory (mkcert generates them there)
+if [[ -f "$HOME/sslcerts/fullchain.pem" ]] && [[ -f "$HOME/sslcerts/privkey.pem" ]]; then
+  cp -f "$HOME/sslcerts/fullchain.pem" "$2/"
+  cp -f "$HOME/sslcerts/privkey.pem" "$2/"
 else
-  cp -r -L /etc/letsencrypt/live/$1/* $2
+  echo "ERROR: Certificates not found in $HOME/sslcerts/" >&2
+  exit 1
 fi

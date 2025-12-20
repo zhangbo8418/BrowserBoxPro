@@ -277,16 +277,7 @@ bbx activate [number of people]
 >[!IMPORTANT]
 >After purchase, you'll receive an email with a secure link to view your **Product Key**. Save it safely; the link is single-use. Lost keys can be re-issued by contacting [Support](mailto:support@dosaygo.com).
 
-### 3. Activate & Run BrowserBox
-
-*   **Windows:** Set the `LICENSE_KEY` environment variable:
-    ```powershell
-    $Env:LICENSE_KEY = "YOUR_BROWSERBOX_PRODUCT_KEY"
-    ```
-*   **Linux/macOS:** Use `bbx certify` to enter and save your Product Key (if not already saved via `bbx activate`).
-    ```console
-    bbx certify YOUR_BROWSERBOX_PRODUCT_KEY
-    ```
+### 3. Run BrowserBox
 
 Then, start BrowserBox:
 ```console
@@ -304,7 +295,6 @@ Access BrowserBox using the **Login Link** provided in your console. For public 
 The `bbx` CLI simplifies every aspect of BrowserBox management:
 
 *   ✅ **Easy Installation & Updates:** `bbx install`, `bbx update`
-*   💳 **License Management:** `bbx activate [number of seats]`, `bbx certify [product key]`
 *   👩‍💻 **Multi-User Support:** Run BrowserBox for multiple users on a single machine.
 *   🐳 **Docker Integration:** `bbx docker-run`
 *   🧅 **Tor Anonymity:** `bbx tor-run`

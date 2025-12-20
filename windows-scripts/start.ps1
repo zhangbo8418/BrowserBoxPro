@@ -4,8 +4,6 @@
 param (
     [Parameter(Mandatory = $false, HelpMessage = "Specify the hostname for BrowserBox.")]
     [string]$Hostname,
-    [Parameter(Mandatory = $false, HelpMessage = "Provide an email address (unused).")]
-    [string]$Email,
     [Parameter(Mandatory = $false, HelpMessage = "Specify the main port for BrowserBox.")]
     [int]$Port,
     [Parameter(Mandatory = $false, HelpMessage = "Provide a specific login token.")]
@@ -15,18 +13,16 @@ param (
 if ($PSBoundParameters.ContainsKey('Help') -or $args -contains '-help') {
     Write-Host "bbx run" -ForegroundColor Green
     Write-Host "Run BrowserBox" -ForegroundColor Yellow
-    Write-Host "Usage: bbx run [-Hostname <hostname>] [-Port <port>] [-Token <token>] [-Email <email>]" -ForegroundColor Cyan
+    Write-Host "Usage: bbx run [-Hostname <hostname>] [-Port <port>] [-Token <token>]" -ForegroundColor Cyan
     Write-Host "Options:" -ForegroundColor Cyan
     Write-Host " -Hostname Specify the hostname (loaded from test.env if not provided)" -ForegroundColor White
     Write-Host " -Port Main port (loaded from test.env if not provided)" -ForegroundColor White
     Write-Host " -Token Specific login token (loaded from test.env if not provided)" -ForegroundColor White
-    Write-Host " -Email Email address (unused)" -ForegroundColor White
     return
 }
 
 # Define paths
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$certifyScriptPath = Join-Path $scriptDir "certify.ps1"
 $installDir = "C:\Program Files\browserbox"
 $configDir = "$env:USERPROFILE\.config\dosyago\bbpro"
 $envFile = "$configDir\test.env"

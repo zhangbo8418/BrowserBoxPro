@@ -4,8 +4,6 @@
 param (
     [Parameter(Mandatory = $false, HelpMessage = "Specify the hostname for BrowserBox (defaults to system hostname).")]
     [string]$Hostname,
-    [Parameter(Mandatory = $false, HelpMessage = "Provide an email address for certificate registration (optional).")]
-    [string]$Email,
     [Parameter(Mandatory = $false, HelpMessage = "Specify the main port for BrowserBox (default: 8080).")]
     [ValidateRange(4024, 65533)]
     [int]$Port = 8080,
@@ -18,10 +16,9 @@ param (
 if ($PSBoundParameters.ContainsKey('Help') -or $args -contains '-help') {
     Write-Host "bbx setup" -ForegroundColor Green
     Write-Host "Set up BrowserBox" -ForegroundColor Yellow
-    Write-Host "Usage: bbx setup [-Hostname <hostname>] [-Email <email>] [-Port <port>] [-Token <token>] [-Force]" -ForegroundColor Cyan
+    Write-Host "Usage: bbx setup [-Hostname <hostname>] [-Port <port>] [-Token <token>] [-Force]" -ForegroundColor Cyan
     Write-Host "Options:" -ForegroundColor Cyan
     Write-Host " -Hostname Specify the hostname (defaults to system hostname)" -ForegroundColor White
-    Write-Host " -Email Email for certificate registration (optional)" -ForegroundColor White
     Write-Host " -Port Main port (default: 8080, range 4024-65533)" -ForegroundColor White
     Write-Host " -Token Specific login token (optional, auto-generated if not provided)" -ForegroundColor White
     Write-Host " -Force Force regeneration of certificates" -ForegroundColor White
@@ -120,7 +117,6 @@ function Test-PortFree {
 function Generate-Certificates {
     param (
         [string]$Hostname,
-        [string]$Email,
         [switch]$Force = $false # New parameter to force regeneration
     )
     $sslcerts = "$env:USERPROFILE\sslcerts"
@@ -163,26 +159,32 @@ function Generate-Certificates {
             throw "CERTIFICATE Error"
         }
     } else {
-        if (-not $Email) {
-            Write-Host "Non-local hostname ($Hostname) requires an email for Let's Encrypt. Please provide one:" -ForegroundColor Yellow
-            $Email = Read-Host "Enter email address"
-            if (-not $Email) {
-                Write-Error "Email is required for non-local hostnames with certbot."
-                throw "EMAIL Error"
-            }
-        }
-        Write-Host "Non-local hostname detected ($Hostname). Waiting for DNS resolution..." -ForegroundColor Cyan
+        # For non-local hostnames, also use mkcert
+        Write-Host "Non-local hostname detected ($Hostname). Using mkcert..." -ForegroundColor Cyan
         Wait-ForDnsResolution -Hostname $Hostname
-        Write-Host "Using certbot for $Hostname..." -ForegroundColor Cyan
-        & certbot certonly --standalone -d $Hostname --agree-tos -m $Email --no-eff-email --non-interactive --cert-name browserbox
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Certbot failed to generate certificates for $Hostname. Ensure DNS is set up and port 80 is free."
-            throw "CERTBOT Error"
+        # Remove existing certificates if forcing regeneration
+        if ($Force -and (Test-Path $certFile)) { Remove-Item $certFile -Force }
+        if ($Force -and (Test-Path $keyFile)) { Remove-Item $keyFile -Force }
+        # Run mkcert -install with timeout
+        $process = Start-Process -FilePath "mkcert" -ArgumentList "-install" -NoNewWindow -PassThru
+        $timeoutSeconds = 8
+        $process | Wait-Process -Timeout $timeoutSeconds -ErrorAction SilentlyContinue
+        if ($process.HasExited) {
+            if ($process.ExitCode -ne 0) {
+                Write-Error "mkcert -install failed with exit code $($process.ExitCode)."
+            }
+            Write-Host "mkcert -install completed successfully." -ForegroundColor Cyan
+        } else {
+            Write-Warning "mkcert -install timed out after $timeoutSeconds seconds. Terminating..."
+            $process | Stop-Process -Force
+            Start-Sleep -Seconds 1
+            Write-Host "mkcert -install was terminated due to timeout."
         }
-        $certbotCert = "C:\Certbot\live\browserbox\fullchain.pem"
-        $certbotKey = "C:\Certbot\live\browserbox\privkey.pem"
-        Copy-Item -Path $certbotCert -Destination $certFile -Force
-        Copy-Item -Path $certbotKey -Destination $keyFile -Force
+        & mkcert -cert-file $certFile -key-file $keyFile $Hostname localhost 127.0.0.1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "mkcert failed to generate certificates for $Hostname."
+            throw "CERTIFICATE Error"
+        }
     }
     # Set permissions after generation
     icacls "$certFile" /inheritance:r /grant:r "${env:USERNAME}:RX"
@@ -253,10 +255,10 @@ if (Test-Path $testEnvPath) {
     if ($existingHostname -eq $Hostname -and -not $Force) {
         Write-Host "Setup already completed for $Hostname. Using existing configuration." -ForegroundColor Yellow
     } else {
-        Generate-Certificates -Hostname $Hostname -Email $Email -Force:$Force
+        Generate-Certificates -Hostname $Hostname -Force:$Force
     }
 } else {
-    Generate-Certificates -Hostname $Hostname -Email $Email -Force:$Force
+    Generate-Certificates -Hostname $Hostname -Force:$Force
 }
 
 Write-Host "Starting BrowserBox setup on Windows..." -ForegroundColor Cyan

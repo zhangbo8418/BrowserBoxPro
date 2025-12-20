@@ -98,15 +98,7 @@ if (-not $mkcertPath -or $ForceAll) {
 } else {
     Write-Host "mkcert already installed at $mkcertPath -- skipping." -ForegroundColor Cyan
 }
-# Certbot
-$certbotPath = (Get-Command certbot -ErrorAction SilentlyContinue).Path
-if (-not $certbotPath -or $ForceAll) {
-    Write-Host "Installing Certbot..." -ForegroundColor Cyan
-    winget install --id EFF.Certbot --accept-source-agreements --accept-package-agreements --silent
-    $env:Path = "$env:Path;$env:ProgramFiles\Certbot\bin"
-} else {
-    Write-Host "Certbot already installed at $certbotPath -- skipping." -ForegroundColor Cyan
-}
+# Certbot installation no longer needed
 # Google Chrome
 $chromePath = Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe" -ErrorAction SilentlyContinue
 if (-not $chromePath -or $ForceAll) {

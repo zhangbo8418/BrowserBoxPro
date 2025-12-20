@@ -118,17 +118,6 @@ ensure_dns_tool() {
   if have host; then echo "host"; return 0; fi
   die "Need a DNS lookup tool (dig or host)."
 }
-ensure_certbot() {
-  have certbot && return 0
-  case "$PKG_MGR" in
-    apt-get) pkg_install certbot ;;
-    dnf) pkg_install certbot ;;
-    yum) pkg_install certbot ;;
-    brew) pkg_install certbot ;;
-    *) die "Cannot install certbot automatically on this system." ;;
-  esac
-  have certbot || die "certbot installation failed."
-}
 ensure_nginx() {
   if have nginx; then
     if [[ -n "$NGINX_SERVERS_DIR" ]]; then sudo mkdir -p "$NGINX_SERVERS_DIR"; fi
@@ -384,7 +373,6 @@ enable_nginx_site() {
   log "Installed nginx site: ${target_file}"
 }
 # ---- Cert helpers ----
-le_live_dir_for_domain() { local d="$1" p="/etc/letsencrypt/live/${d}"; [[ -d "$p" ]] && printf '%s\n' "$p" || true; }
 copy_certs_to_home() {
   local live="$1"
   mkdir -p "$SSL_OUT_DIR"; chmod 700 "$SSL_OUT_DIR"
@@ -396,7 +384,7 @@ copy_certs_to_home() {
 
 # ---- Main worker ----
 wildcard_routes() {
-  local domain="" email="" center_port="" backend_scheme=""
+  local domain="" center_port="" backend_scheme=""
   local DO_CLEANUP_ONLY="false"
   local SKIP_PRECLEAN="false"
   local WRITE_HOSTS="true"
@@ -436,7 +424,6 @@ USAGE
   
   # Assign variables from sourced config files
   domain="${DOMAIN:-$BBX_HOSTNAME}"
-  email="${EMAIL}"
   center_port="${APP_PORT}"
   
   if [[ "${BBX_HTTP_ONLY}" == "true" ]]; then
@@ -453,7 +440,6 @@ USAGE
   fi
 
   [[ -n "${domain}" ]] || die "DOMAIN or BBX_HOSTNAME not set in config files."
-  [[ -n "${email}" ]] || die "EMAIL not set in config files."
   [[ -n "${center_port}" ]] || die "APP_PORT not set in ${TEST_ENV_FILE}."
   [[ "$center_port" =~ ^[0-9]+$ ]] || die "APP_PORT must be an integer."
   (( center_port >= 1 && center_port <= 65535 )) || die "Center port out of range 1..65535."
@@ -472,52 +458,10 @@ USAGE
     fi
   fi
 
-  local LOCAL_MODE=0
-  if is_special_tld "$domain"; then
-    LOCAL_MODE=1; log "Local mode: '${domain}' special TLD → mkcert."
-  elif ! domain_has_public_a "$domain"; then
-    LOCAL_MODE=1; log "Local mode: '${domain}' has no public A → mkcert."
-  fi
-  
-  local ip=""
-  if (( LOCAL_MODE == 0 )); then ip="$(choose_machine_ip)"; log "Chosen IP: ${ip}"; fi
-  
-  local le_dir
-  if (( LOCAL_MODE == 0 )); then
-    local label fqdn try=1 ok="no"; label="$(random_label)"; fqdn="${label}.${domain}"
-    log "Verifying wildcard DNS: expecting ${fqdn} -> ${ip}"
-    while (( try <= RETRY_MAX )); do
-      mapfile -t addrs < <(dns_a_records "$fqdn")
-      if ((${#addrs[@]})) && printf '%s\n' "${addrs[@]}" | grep -Fxq "$ip"; then ok="yes"; break; fi
-      if (( try == 1 )); then
-        cat >&2 <<GUIDE
-Action needed (only if this keeps failing):
-  • Ensure wildcard A record: *.${domain} -> ${ip}
-  • Ensure apex A record: ${domain} -> ${ip}
-  • If using IPv6, use AAAA records accordingly.
-GUIDE
-      fi
-      log "Attempt ${try}/${RETRY_MAX}: not resolved yet; retrying in ${RETRY_SLEEP}s..."
-      ((try++)); sleep "$RETRY_SLEEP"
-    done
-    [[ "$ok" == "yes" ]] || die "Wildcard DNS did not resolve to ${ip} after ${RETRY_MAX} tries."
-    ensure_certbot
-    le_dir="$(le_live_dir_for_domain "$domain")"
-    if [[ -z "$le_dir" ]]; then
-      log "Requesting Let's Encrypt wildcard (*.${domain}, ${domain}) via DNS-01..."
-      sudo certbot certonly --manual --preferred-challenges dns \
-        -d "*.${domain}" -d "${domain}" \
-        --agree-tos -m "${email}" --no-eff-email --manual-public-ip-logging-ok 1>&2
-      le_dir="$(le_live_dir_for_domain "$domain")"; [[ -d "$le_dir" ]] || die "certbot finished but live dir missing."
-    else
-      log "Existing LE cert found at ${le_dir}; skipping issuance."
-    fi
-    copy_certs_to_home "$le_dir"
-  else
-    log "Generating locally trusted certificate via mkcert."
-    gen_mkcert_into_sslout "$domain"
-    le_dir="${SSL_OUT_DIR}"
-  fi
+  # Always use mkcert for certificate generation
+  log "Generating locally trusted certificate via mkcert."
+  gen_mkcert_into_sslout "$domain"
+  local le_dir="${SSL_OUT_DIR}"
 
   local p0 p1 p2 p3 p4
   p0=$(( center_port - 2 )); p1=$(( center_port - 1 )); p2=$(( center_port ))

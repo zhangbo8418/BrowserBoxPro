@@ -2,8 +2,6 @@
 param (
     [Parameter(Mandatory = $false, HelpMessage = "Specify the hostname (unused).")]
     [string]$Hostname,
-    [Parameter(Mandatory = $false, HelpMessage = "Provide an email address (unused).")]
-    [string]$Email,
     [Parameter(Mandatory = $false, HelpMessage = "Specify the main port (unused).")]
     [int]$Port,
     [Parameter(Mandatory = $false, HelpMessage = "Provide a specific login token (unused).")]
@@ -18,7 +16,7 @@ if ($PSBoundParameters.ContainsKey('Help') -or $args -contains '-help') {
     Write-Host "Usage: bbx stop [-GraceSeconds <seconds>]" -ForegroundColor Cyan
     Write-Host "Options:" -ForegroundColor Cyan
     Write-Host "  -GraceSeconds  Wait time in seconds for graceful shutdown (default: 7)" -ForegroundColor White
-    Write-Host "Note: --Hostname, --Email, --Port, -Token are accepted but unused" -ForegroundColor Gray
+    Write-Host "Note: --Hostname, --Port, -Token are accepted but unused" -ForegroundColor Gray
     return
 }
 
