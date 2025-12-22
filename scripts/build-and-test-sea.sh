@@ -71,6 +71,17 @@ if [ ! -d "dist/public" ] || [ -z "$(ls -A dist/public 2>/dev/null)" ]; then
   cp -r src/public/* dist/public/ 2>/dev/null || true
 fi
 
+# 确保 voodoo 的前端依赖 (bang.html 等) 被打包到 SEA 运行时可访问的位置
+echo "步骤 2.3: 复制 voodoo node_modules (bang.html 等前端依赖)..."
+if [ -d "src/public/voodoo/node_modules" ]; then
+  mkdir -p dist/voodoo
+  # 保持与浏览器请求路径一致: /voodoo/node_modules/...
+  cp -r src/public/voodoo/node_modules dist/voodoo/ 2>/dev/null || true
+else
+  echo "⚠️  未找到 src/public/voodoo/node_modules，若访问 /voodoo/node_modules/* 出现 404，请先运行:"
+  echo "   (cd src/public/voodoo && npm install)"
+fi
+
 # 步骤 3: 使用 esbuild 打包
 echo "步骤 3: 使用 esbuild 打包..."
 # 使用 ESM 格式（代码中有 top-level await）
