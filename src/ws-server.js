@@ -547,7 +547,25 @@
     if ( process.env.TORBB ) {
       app.get("/torca/rootCA.pem", VeryConstrainedRateLimiter, (req, res) => res.sendFile(path.resolve(process.env.TORCA_CERT_ROOT, 'rootCA.pem')));
     }
-    app.use(express.static(path.resolve(APP_ROOT, ...(DEBUG.mode === 'dev' ? ['public'] : ['..', 'dist']))));
+
+    // NOTE:
+    //  - 普通 Node 运行时，APP_ROOT 指向源码目录（src），这里按原逻辑从 src/public 或 顶层 dist 提供静态资源
+    //  - SEA 二进制运行时，bundle 内部的 APP_ROOT 可能指向快照文件系统，拿不到外部 dist 目录
+    //  - 为了兼容 SEA，我们额外挂载基于 process.cwd() 的静态目录，这样只要把 dist 放在当前工作目录下就能正常加载图标和前端资源
+    const primaryStaticRoot = path.resolve(APP_ROOT, ...(DEBUG.mode === 'dev' ? ['public'] : ['..', 'dist']));
+    app.use(express.static(primaryStaticRoot));
+
+    // 仅在需要时追加额外静态根目录（不会影响原有行为）
+    const fallbackStaticRoots = new Set([
+      path.resolve(process.cwd(), 'dist'),
+      path.resolve(process.cwd(), 'public')
+    ]);
+
+    for ( const dir of fallbackStaticRoots ) {
+      if (dir !== primaryStaticRoot) {
+        app.use(express.static(dir));
+      }
+    }
 
     try {
       SAFARI_PERMISSION_LOADER_HTML = fs.readFileSync(path.resolve(APP_ROOT,...(DEBUG.mode === 'dev' ? ['public', 'assets'] : ['..', 'dist', 'assets']),'SPL.html'));

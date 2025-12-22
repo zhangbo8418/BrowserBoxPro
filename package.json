@@ -101,6 +101,7 @@
     "is-docker": "latest",
     "lighthouse-logger": "^2.0.2",
     "multer": "latest",
+    "parcel": "^2.16.3",
     "patch-package": "latest",
     "simple-peer": "latest",
     "socks-proxy-agent": "latest",
@@ -114,6 +115,8 @@
   "devDependencies": {
     "@eslint/js": "^9.25.1",
     "@mapbox/node-pre-gyp": "^1.0.1",
+    "@parcel/packager-raw-url": "^2.16.3",
+    "@parcel/transformer-webmanifest": "^2.16.3",
     "@types/body-parser": "latest",
     "@types/cookie-parser": "latest",
     "@types/current-git-branch": "latest",
@@ -125,6 +128,7 @@
     "@vertx/core": "latest",
     "eslint": "^9.35.0",
     "globals": "^16.0.0",
+    "parcel-resolver-ignore": "^2.2.1",
     "whatwg-fetch": "^3.6.20"
   }
 }
